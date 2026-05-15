@@ -1,0 +1,14 @@
+Core/Inc/
+Core/Startup/
+Core/Src/*
+!Core/Src/main.c
+
+build/
+Drivers/
+
+.clang-format
+.cproject
+.mxproject
+.project
+STM32F407VGTX_FLASH.ld
+STM32F407VGTX_RAM.ld
