@@ -86,6 +86,9 @@ static void assemble_chassis(void) {
     assert(can_filter_init() == STM32_HAL_CAN_OK);
     assert(can_start(&hfdcan1) == STM32_HAL_CAN_OK);
     assert(can_start(&hfdcan2) == STM32_HAL_CAN_OK);
+
+    delay_ms(1000);
+
     assert(chassis_init() == chassis.OK);
 }
 

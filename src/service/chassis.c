@@ -57,7 +57,7 @@ static ChassisConfig chassis_default_config(void);
 static ChassisErrorCode chassis_check_config(const ChassisConfig* config);
 static bool chassis_dm_can_send(uint32_t id, const uint8_t* data, uint8_t len);
 static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len);
-static ChassisErrorCode chassis_init_steer_motors(void);
+static ChassisErrorCode chassis_enable_steer_motors(void);
 static void chassis_dm_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
 static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
 
@@ -118,7 +118,7 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     }
 
     delay_ms(500);
-    if(chassis_init_steer_motors() != ch.OK) {
+    if(chassis_enable_steer_motors() != ch.OK) {
         return ch.INVALID_PARAM;
     }
 
@@ -268,7 +268,7 @@ static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len) 
     return can_send(s_dji_can, id, data, len) == STM32_HAL_CAN_OK;
 }
 
-static ChassisErrorCode chassis_init_steer_motors(void) {
+static ChassisErrorCode chassis_enable_steer_motors(void) {
     uint8_t i;
 
     for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
