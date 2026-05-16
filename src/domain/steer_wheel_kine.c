@@ -205,9 +205,9 @@ static void sw_get_wheel_pos(const SteerWheelModel* model, float x[4], float y[4
     const float hx = model->length * 0.5f;
     const float hy = model->width * 0.5f;
 
-    // 约定顺序: FL, FR, RL, RR
-    x[0] = hx;  y[0] = hy;
-    x[1] = hx;  y[1] = -hy;
+    /* 约定顺序: FL, FR, RR, RL */
+    x[0] = hx;  y[0] = -hy;
+    x[1] = hx;  y[1] = hy;
     x[2] = -hx;  y[2] = hy;
     x[3] = -hx;  y[3] = -hy;
 }

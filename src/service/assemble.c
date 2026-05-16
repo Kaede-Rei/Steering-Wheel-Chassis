@@ -7,13 +7,18 @@
 #include "rgb_led/rgb_led.h"
 #include "rgb_led/ws2812_rgb_led.h"
 
+// ! service ! //
+#include "chassis.h"
+
 // ! infra ! //
 #include "delay.h"
 #include "log.h"
 
 // ! platform ! //
+#include "bsp_can.h"
 #include "stm32_hal_spi.h"
 #include "stm32_hal_uart.h"
+#include "fdcan.h"
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
@@ -33,6 +38,7 @@ static const LogPortOps log_ops = {
 
 static void assemble_log(void);
 static void assemble_rgb_led(void);
+static void assemble_chassis(void);
 static void assemble_rgb_led_write_complete(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
@@ -41,6 +47,7 @@ void assemble_init(void) {
     delay_ms_init(HAL_GetTick);
     assemble_log();
     assemble_rgb_led();
+    assemble_chassis();
 
     delay_ms(500);
     log_info("System initialized successfully");
@@ -73,6 +80,13 @@ static void assemble_rgb_led(void) {
     spi_register_tx_complete_callback(&hspi6, assemble_rgb_led_write_complete);
     rgb_led.fill(0u, 255u, 0u);
     rgb_led.show();
+}
+
+static void assemble_chassis(void) {
+    assert(can.filter_init() == can.OK);
+    assert(can.start(&hfdcan1) == can.OK);
+    assert(can.start(&hfdcan2) == can.OK);
+    assert(chassis_init() == chassis.OK);
 }
 
 static void assemble_rgb_led_write_complete(void) {
