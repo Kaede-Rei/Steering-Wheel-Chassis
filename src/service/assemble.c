@@ -15,7 +15,7 @@
 #include "log.h"
 
 // ! platform ! //
-#include "bsp_can.h"
+#include "stm32_hal_can.h"
 #include "stm32_hal_spi.h"
 #include "stm32_hal_uart.h"
 #include "fdcan.h"
@@ -83,9 +83,9 @@ static void assemble_rgb_led(void) {
 }
 
 static void assemble_chassis(void) {
-    assert(can.filter_init() == can.OK);
-    assert(can.start(&hfdcan1) == can.OK);
-    assert(can.start(&hfdcan2) == can.OK);
+    assert(can_filter_init() == STM32_HAL_CAN_OK);
+    assert(can_start(&hfdcan1) == STM32_HAL_CAN_OK);
+    assert(can_start(&hfdcan2) == STM32_HAL_CAN_OK);
     assert(chassis_init() == chassis.OK);
 }
 

@@ -1,25 +1,32 @@
 #include "chassis.h"
+
+#include "bus_motor/agv_motor.h"
+#include "bus_motor/dji_motor.h"
+#include "bus_motor/dm_motor.h"
 #include "delay.h"
 #include "fdcan.h"
+
+#include <stdbool.h>
 #include <stddef.h>
 
-#include "motor/DJI_Motor.h"
-#include "motor/DM_Motor.h"
+// ! ========================= 变 量 声 明 ========================= ! //
 
 #define ch chassis_interface
 
 #define CHASSIS_DEFAULT_WHEEL_DRIVE_RATIO 1.0f
-#define CHASSIS_PI 3.14159265358979323846f
-
+#define CHASSIS_STEER_TRACK_SPEED_RAD_S   3.14f
 typedef struct {
     ChassisModule module;
     uint8_t dm_id;
-    uint8_t dji_index;
+    uint8_t dji_id;
+    int8_t drive_sign;
 } ChassisModuleMap;
 
 static Chassis s_chassis;
+static FDCAN_HandleTypeDef* s_dm_can = NULL;
+static FDCAN_HandleTypeDef* s_dji_can = NULL;
 
-#define X(name, index, dm_id, dji_index) [CHASSIS_MODULE_##name] = { CHASSIS_MODULE_##name, (dm_id), (dji_index) },
+#define X(name, index, dm_id, dji_index) [CHASSIS_MODULE_##name] = { CHASSIS_MODULE_##name, (dm_id), (uint8_t)((dji_index) + 1u), (((dji_index) == 1 || (dji_index) == 2) ? -1 : 1) },
 static const ChassisModuleMap s_module_map[CHASSIS_MODULE_COUNT] = {
     CHASSIS_MODULE_TABLE
 };
@@ -33,7 +40,7 @@ const struct ChassisInterface chassis_interface = {
     .init = chassis_init,
     .init_with_config = chassis_init_with_config,
     .set_velocity = chassis_set_velocity,
-    .task_500hz = chassis_task_500hz,
+    .process = chassis_process,
     .stop = chassis_stop,
     .get = chassis_get,
     .state = chassis_state,
@@ -42,12 +49,19 @@ const struct ChassisInterface chassis_interface = {
 };
 #undef X
 
-static float chassis_wheel_omega_to_dji_rpm(float wheel_omega);
-static float chassis_dji_rpm_to_wheel_omega(float dji_rpm);
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
+
+static float chassis_wheel_omega_to_drive_omega(float wheel_omega);
+static float chassis_drive_omega_to_wheel_omega(float drive_omega);
 static ChassisConfig chassis_default_config(void);
 static ChassisErrorCode chassis_check_config(const ChassisConfig* config);
-static void chassis_dm_can_rx_callback(BspCanHandle* hcan, const BspCanRxHeader* header, const uint8_t data[8], void* user);
-static void chassis_dji_can_rx_callback(BspCanHandle* hcan, const BspCanRxHeader* header, const uint8_t data[8], void* user);
+static bool chassis_dm_can_send(uint32_t id, const uint8_t* data, uint8_t len);
+static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len);
+static ChassisErrorCode chassis_init_steer_motors(void);
+static void chassis_dm_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
+static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
+
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 ChassisErrorCode chassis_init(void) {
     ChassisConfig config = chassis_default_config();
@@ -55,21 +69,47 @@ ChassisErrorCode chassis_init(void) {
 }
 
 ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
+    static const BusMotorPortOps steer_ops = {
+        .send = chassis_dm_can_send,
+    };
+    static const BusMotorPortOps drive_ops = {
+        .send = chassis_dji_can_send,
+    };
+    BusMotorConfig steer_config = {
+        .ops = &steer_ops,
+        .timeout_ms = 0u,
+        .retry_count = 0u,
+    };
+    BusMotorConfig drive_config = {
+        .ops = &drive_ops,
+        .timeout_ms = 0u,
+        .retry_count = 0u,
+    };
     ChassisErrorCode config_status = chassis_check_config(config);
+
     if(config_status != ch.OK) {
         return config_status;
     }
 
+    steer_motor_set_instance(&dm_motor_instance);
+    drive_motor_set_instance(&dji_motor_instance);
+
     s_chassis.config = *config;
-    s_chassis.initialized = 0U;
+    s_chassis.initialized = 0u;
+    s_dm_can = config->dm_hcan;
+    s_dji_can = config->dji_hcan;
 
-    DM_Motor_Init(config->dm_hcan);
-    DJI_Motor_Init(config->dji_hcan);
+    if(steer_motor.init(&steer_config) != MOTOR_STATUS_OK) {
+        return ch.INVALID_PARAM;
+    }
+    if(drive_motor.init(&drive_config) != MOTOR_STATUS_OK) {
+        return ch.INVALID_PARAM;
+    }
 
-    if(can.register_rx_callback(config->dm_hcan, chassis_dm_can_rx_callback, NULL) != can.OK) {
+    if(can_register_rx_callback(config->dm_hcan, chassis_dm_can_rx_callback, NULL) != STM32_HAL_CAN_OK) {
         return ch.CAN_REGISTER_FAILED;
     }
-    if(can.register_rx_callback(config->dji_hcan, chassis_dji_can_rx_callback, NULL) != can.OK) {
+    if(can_register_rx_callback(config->dji_hcan, chassis_dji_can_rx_callback, NULL) != STM32_HAL_CAN_OK) {
         return ch.CAN_REGISTER_FAILED;
     }
 
@@ -78,64 +118,61 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     }
 
     delay_ms(500);
-    for(uint8_t i = 0U; i < CHASSIS_MODULE_COUNT; ++i) {
-        DM_Motor_Clear_Error(s_module_map[i].dm_id);
-        delay_ms(100);
-        DM_Motor_Enable(s_module_map[i].dm_id);
-        delay_ms(100);
+    if(chassis_init_steer_motors() != ch.OK) {
+        return ch.INVALID_PARAM;
     }
 
-    s_chassis.initialized = 1U;
+    s_chassis.initialized = 1u;
     return ch.OK;
 }
 
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
-    if(s_chassis.initialized == 0U) {
+    if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
     }
 
     s_chassis.kine.control.vx = vx;
     s_chassis.kine.control.vy = vy;
     s_chassis.kine.control.wz = wz;
-
     return ch.OK;
 }
 
-ChassisErrorCode chassis_task_500hz(void) {
-    if(s_chassis.initialized == 0U) {
+ChassisErrorCode chassis_process(void) {
+    uint8_t i;
+
+    if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
     }
 
-    for(uint8_t i = 0U; i < CHASSIS_MODULE_COUNT; ++i) {
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
         const ChassisModuleMap* map = &s_module_map[i];
-        const uint8_t dm_index = map->dm_id - 1U;
-        const uint8_t dji_index = map->dji_index;
+
+        steer_motor.update_feedback(map->dm_id, NULL);
+        drive_motor.update_feedback(map->dji_id, NULL);
+    }
+
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        const ChassisModuleMap* map = &s_module_map[i];
 
         s_chassis.kine.state.cur_wheels[map->module].wheel_omega =
-            chassis_dji_rpm_to_wheel_omega((float)dji_motors[dji_index].real_rpm);
-        s_chassis.kine.state.cur_wheels[map->module].steer_angle = dm_motors[dm_index].pos;
+            chassis_drive_omega_to_wheel_omega((float)map->drive_sign * drive_motor.get_spd(map->dji_id));
+        s_chassis.kine.state.cur_wheels[map->module].steer_angle =
+            steer_motor.get_pos(map->dm_id);
     }
 
     if(swheel.ik(&s_chassis.kine) != swheel.OK) {
         return ch.KINEMATICS_FAILED;
     }
 
-    for(uint8_t i = 0U; i < CHASSIS_MODULE_COUNT; ++i) {
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
         const ChassisModuleMap* map = &s_module_map[i];
-        const uint8_t dji_index = map->dji_index;
+        float target_speed =
+            chassis_wheel_omega_to_drive_omega(s_chassis.kine.control.wheels[map->module].wheel_omega);
 
-        dji_motors[dji_index].target_rpm =
-            chassis_wheel_omega_to_dji_rpm(s_chassis.kine.control.wheels[map->module].wheel_omega);
-        if(dji_index == 1U || dji_index == 2U) {
-            dji_motors[dji_index].target_rpm = -dji_motors[dji_index].target_rpm;
-        }
-
-        DM_Motor_Set_Angle_Rad(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
-        // DM_Motor_Ctrl_PosVel(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle, 1.0f);
-        DJI_Motor_Calc_PID(&dji_motors[dji_index]);
+        (void)drive_motor.set_spd(map->dji_id, (float)map->drive_sign * target_speed);
+        (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
+        (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
     }
-
-    DJI_Motor_Send_Currents();
 
     if(swheel.fk(&s_chassis.kine) != swheel.OK) {
         return ch.KINEMATICS_FAILED;
@@ -145,7 +182,9 @@ ChassisErrorCode chassis_task_500hz(void) {
 }
 
 ChassisErrorCode chassis_stop(void) {
-    if(s_chassis.initialized == 0U) {
+    uint8_t i;
+
+    if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
     }
 
@@ -153,11 +192,10 @@ ChassisErrorCode chassis_stop(void) {
     s_chassis.kine.control.vy = 0.0f;
     s_chassis.kine.control.wz = 0.0f;
 
-    for(uint8_t i = 0U; i < CHASSIS_MODULE_COUNT; ++i) {
-        dji_motors[s_module_map[i].dji_index].target_rpm = 0.0f;
-        DJI_Motor_Calc_PID(&dji_motors[s_module_map[i].dji_index]);
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        (void)steer_motor.brake(s_module_map[i].dm_id);
+        (void)drive_motor.stop(s_module_map[i].dji_id);
     }
-    DJI_Motor_Send_Currents();
 
     return ch.OK;
 }
@@ -183,17 +221,7 @@ const char* chassis_error_code_to_str(ChassisErrorCode status) {
 }
 #undef X
 
-void Chassis_Init(void) {
-    (void)chassis_init();
-}
-
-void Chassis_Set_Velocity(float vx, float vy, float wz) {
-    (void)chassis_set_velocity(vx, vy, wz);
-}
-
-void Chassis_Task_500Hz(void) {
-    (void)chassis_task_500hz();
-}
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 static ChassisConfig chassis_default_config(void) {
     ChassisConfig config = {
@@ -220,33 +248,77 @@ static ChassisErrorCode chassis_check_config(const ChassisConfig* config) {
         || config->wheel_drive_ratio <= 0.0f) {
         return ch.INVALID_MODEL;
     }
+
     return ch.OK;
 }
 
-static float chassis_wheel_omega_to_dji_rpm(float wheel_omega) {
-    const float wheel_rpm = wheel_omega * 60.0f / (2.0f * CHASSIS_PI);
-    return wheel_rpm * s_chassis.config.wheel_drive_ratio * M3508_REDUCTION_RATIO;
+static bool chassis_dm_can_send(uint32_t id, const uint8_t* data, uint8_t len) {
+    if(s_dm_can == NULL) {
+        return false;
+    }
+
+    return can_send(s_dm_can, id, data, len) == STM32_HAL_CAN_OK;
 }
 
-static float chassis_dji_rpm_to_wheel_omega(float dji_rpm) {
-    const float wheel_rpm = dji_rpm / (s_chassis.config.wheel_drive_ratio * M3508_REDUCTION_RATIO);
-    return wheel_rpm * (2.0f * CHASSIS_PI) / 60.0f;
+static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len) {
+    if(s_dji_can == NULL) {
+        return false;
+    }
+
+    return can_send(s_dji_can, id, data, len) == STM32_HAL_CAN_OK;
 }
 
-static void chassis_dm_can_rx_callback(BspCanHandle* hcan,
-    const BspCanRxHeader* header,
+static ChassisErrorCode chassis_init_steer_motors(void) {
+    uint8_t i;
+
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        uint8_t dm_id = s_module_map[i].dm_id;
+
+        (void)dm_motor_clear_error(dm_id);
+        delay_ms(100);
+        (void)steer_motor.enable(dm_id);
+        delay_ms(100);
+        (void)steer_motor.switch_mode(dm_id, DM_MOTOR_MODE_POS_VEL);
+        (void)steer_motor.set_spd(dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
+        (void)steer_motor.set_tor(dm_id, 0.0f);
+        (void)steer_motor.brake(dm_id);
+    }
+
+    return ch.OK;
+}
+
+static float chassis_wheel_omega_to_drive_omega(float wheel_omega) {
+    return wheel_omega * s_chassis.config.wheel_drive_ratio;
+}
+
+static float chassis_drive_omega_to_wheel_omega(float drive_omega) {
+    return drive_omega / s_chassis.config.wheel_drive_ratio;
+}
+
+static void chassis_dm_can_rx_callback(FDCAN_HandleTypeDef* hcan,
+    const FDCAN_RxHeaderTypeDef* header,
     const uint8_t data[8],
     void* user) {
     (void)hcan;
     (void)user;
-    DM_Motor_Parse(header, data);
+
+    if(header == NULL) {
+        return;
+    }
+
+    (void)dm_motor_parse_feedback_frame(header->Identifier, data, NULL);
 }
 
-static void chassis_dji_can_rx_callback(BspCanHandle* hcan,
-    const BspCanRxHeader* header,
+static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan,
+    const FDCAN_RxHeaderTypeDef* header,
     const uint8_t data[8],
     void* user) {
     (void)hcan;
     (void)user;
-    DJI_Motor_Parse(header->Identifier, data);
+
+    if(header == NULL) {
+        return;
+    }
+
+    (void)dji_motor_parse_feedback_frame(header->Identifier, data, NULL);
 }
