@@ -22,7 +22,8 @@ typedef struct {
     int8_t drive_sign;
 } ChassisModuleMap;
 
-static Chassis s_chassis;
+static Chassis s_chassis = { 0 };
+static Chassis s_chassis_view = { 0 };
 static FDCAN_HandleTypeDef* s_dm_can = NULL;
 static FDCAN_HandleTypeDef* s_dji_can = NULL;
 
@@ -42,9 +43,9 @@ const struct ChassisInterface chassis_interface = {
     .set_velocity = chassis_set_velocity,
     .process = chassis_process,
     .stop = chassis_stop,
-    .get = chassis_get,
-    .state = chassis_state,
-    .control = chassis_control,
+    .get_chassis = chassis_get_chassis,
+    .get_state = chassis_get_state,
+    .get_control = chassis_get_control,
     .error_code_to_str = chassis_error_code_to_str
 };
 #undef X
@@ -60,6 +61,8 @@ static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len);
 static ChassisErrorCode chassis_enable_steer_motors(void);
 static void chassis_dm_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
 static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
+static void chassis_external_to_internal_twist(float vx_ext, float vy_ext, float wz_ext, float* vx_int, float* vy_int, float* wz_int);
+static void chassis_internal_to_external_twist(float vx_int, float vy_int, float wz_int, float* vx_ext, float* vy_ext, float* wz_ext);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -131,9 +134,9 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
         return ch.NOT_INITIALIZED;
     }
 
-    s_chassis.kine.control.vx = vx;
-    s_chassis.kine.control.vy = vy;
-    s_chassis.kine.control.wz = wz;
+    chassis_external_to_internal_twist(vx, vy, wz,
+        &s_chassis.kine.control.vx, &s_chassis.kine.control.vy, &s_chassis.kine.control.wz);
+
     return ch.OK;
 }
 
@@ -178,6 +181,10 @@ ChassisErrorCode chassis_process(void) {
         return ch.KINEMATICS_FAILED;
     }
 
+    s_chassis_view = s_chassis;
+    chassis_internal_to_external_twist(s_chassis.kine.state.cur_vx, s_chassis.kine.state.cur_vy, s_chassis.kine.state.cur_wz,
+        &s_chassis_view.kine.state.cur_vx, &s_chassis_view.kine.state.cur_vy, &s_chassis_view.kine.state.cur_wz);
+
     return ch.OK;
 }
 
@@ -200,16 +207,16 @@ ChassisErrorCode chassis_stop(void) {
     return ch.OK;
 }
 
-const Chassis* chassis_get(void) {
-    return &s_chassis;
+const Chassis* chassis_get_chassis(void) {
+    return &s_chassis_view;
 }
 
-const SteerWheelState* chassis_state(void) {
-    return &s_chassis.kine.state;
+const SteerWheelState* chassis_get_state(void) {
+    return &s_chassis_view.kine.state;
 }
 
-const SteerWheelControl* chassis_control(void) {
-    return &s_chassis.kine.control;
+const SteerWheelControl* chassis_get_control(void) {
+    return &s_chassis_view.kine.control;
 }
 
 #define X(name, str) case CHASSIS_##name: return str;
@@ -321,4 +328,16 @@ static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan,
     }
 
     (void)dji_motor_parse_feedback_frame(header->Identifier, data, NULL);
+}
+
+static void chassis_external_to_internal_twist(float vx_ext, float vy_ext, float wz_ext, float* vx_int, float* vy_int, float* wz_int) {
+    if(vx_int != NULL) *vx_int = vx_ext;
+    if(vy_int != NULL) *vy_int = -vy_ext;
+    if(wz_int != NULL) *wz_int = -wz_ext;
+}
+
+static void chassis_internal_to_external_twist(float vx_int, float vy_int, float wz_int, float* vx_ext, float* vy_ext, float* wz_ext) {
+    if(vx_ext != NULL) *vx_ext = vx_int;
+    if(vy_ext != NULL) *vy_ext = -vy_int;
+    if(wz_ext != NULL) *wz_ext = -wz_int;
 }

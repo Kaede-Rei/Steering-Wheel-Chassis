@@ -67,7 +67,8 @@ static inline void entry_loop(void) {
     }
 
     if(delay_nb_ms(&log_task, 100)) {
-        log_vofa(accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], temp);
+        SteerWheelState state = *chassis.get_state();
+        log_vofa(state.cur_vx, state.cur_vy, state.cur_wz, gyro[0], gyro[1], gyro[2]);
     }
 }
 

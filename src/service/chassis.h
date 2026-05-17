@@ -59,9 +59,9 @@ extern const struct ChassisInterface {
     ChassisErrorCode(*set_velocity)(float vx, float vy, float wz);
     ChassisErrorCode(*process)(void);
     ChassisErrorCode(*stop)(void);
-    const Chassis* (*get)(void);
-    const SteerWheelState* (*state)(void);
-    const SteerWheelControl* (*control)(void);
+    const Chassis* (*get_chassis)(void);
+    const SteerWheelState* (*get_state)(void);
+    const SteerWheelControl* (*get_control)(void);
     const char* (*error_code_to_str)(ChassisErrorCode status);
 } chassis_interface;
 #undef X
@@ -73,9 +73,9 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config);
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz);
 ChassisErrorCode chassis_process(void);
 ChassisErrorCode chassis_stop(void);
-const Chassis* chassis_get(void);
-const SteerWheelState* chassis_state(void);
-const SteerWheelControl* chassis_control(void);
+const Chassis* chassis_get_chassis(void);
+const SteerWheelState* chassis_get_state(void);
+const SteerWheelControl* chassis_get_control(void);
 const char* chassis_error_code_to_str(ChassisErrorCode status);
 
 #endif
