@@ -1,7 +1,7 @@
 #ifndef _CHASSIS_H_
 #define _CHASSIS_H_
 
-#include "stm32_hal_can.h"
+#include "stm32_hal_can.h" // IWYU pragma: keep
 #include "steer_wheel_kine.h"
 #include <stdint.h>
 

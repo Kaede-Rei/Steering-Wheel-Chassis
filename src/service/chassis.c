@@ -235,8 +235,8 @@ static ChassisConfig chassis_default_config(void) {
         .dm_hcan = &hfdcan1,
         .dji_hcan = &hfdcan2,
         .model = {
-            .length = 0.2657f,
-            .width = 0.2657f,
+            .length = 0.26572986916f,
+            .width = 0.26572986916f,
             .wheel_radius = 0.057965f,
             .max_wheel_linear_speed = 2.0f
         },
