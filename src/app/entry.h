@@ -30,7 +30,6 @@
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
-static ms_t chassis_task = 0;
 static ms_t log_task = 0;
 static ms_t imu_task = 0;
 
@@ -58,17 +57,20 @@ static inline void entry_init(void) {
  * @brief 程序主循环入口函数
  */
 static inline void entry_loop(void) {
-    if(delay_nb_ms(&chassis_task, 2)) {
-        chassis.process();
-    }
-
+    // ! 周 期 性 任 务 ! //
     if(delay_nb_ms(&imu_task, 10)) {
         BMI088_read(gyro, accel, &temp);
     }
 
-    if(delay_nb_ms(&log_task, 100)) {
+    if(delay_nb_ms(&log_task, 1000)) {
         SteerWheelState state = *chassis.get_state();
-        log_vofa(state.cur_vx, state.cur_vy, state.cur_wz, gyro[0], gyro[1], gyro[2]);
+        log_vofa(state.cur_vx, state.cur_vy, state.cur_wz, gyro[0], gyro[1], gyro[2], temp);
+    }
+
+    // ! 事 件 驱 动 任 务 ! //
+    if(chassis_control_flag) {
+        chassis_control_flag = false;
+        chassis.process();
     }
 }
 

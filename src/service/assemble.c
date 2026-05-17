@@ -18,14 +18,13 @@
 #include "stm32_hal_can.h"
 #include "stm32_hal_spi.h"
 #include "stm32_hal_uart.h"
-#include "fdcan.h"
+#include "stm32_hal_tim.h"
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
 static uint8_t rgb_color_buffer[WS2812_RGB_LED_DEFAULT_PIXEL_COUNT * RGB_LED_COLOR_BYTES];
 static uint8_t rgb_tx_buffer[WS2812_RGB_LED_DEFAULT_PIXEL_COUNT * WS2812_RGB_LED_BITS_PER_PIXEL + WS2812_RGB_LED_DEFAULT_RESET_BYTES]
 __attribute__((section(".ram_d3"), aligned(32)));
-
 static const RgbLedPortOps rgb_ops = {
     .write = spi_write,
 };
@@ -34,12 +33,16 @@ static const LogPortOps log_ops = {
     .write = uart1_write,
 };
 
+bool chassis_control_flag = false;
+
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 static void assemble_log(void);
 static void assemble_rgb_led(void);
 static void assemble_chassis(void);
-static void assemble_rgb_led_write_complete(void);
+
+static void rgb_led_write_comlete_callback(void);
+static void chassis_control_callback(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -77,7 +80,7 @@ static void assemble_rgb_led(void) {
     rgb_config.async_write = true;
 
     assert(rgb_led.init(&rgb_config) == RGB_LED_STATUS_OK);
-    spi_register_tx_complete_callback(&hspi6, assemble_rgb_led_write_complete);
+    spi_register_tx_complete_callback(&hspi6, rgb_led_write_comlete_callback);
     rgb_led.fill(0u, 255u, 0u);
     rgb_led.show();
 }
@@ -90,8 +93,14 @@ static void assemble_chassis(void) {
     delay_ms(1000);
 
     assert(chassis_init() == chassis.OK);
+    tim_register_callback(&htim6, chassis_control_callback);
+    tim_start();
 }
 
-static void assemble_rgb_led_write_complete(void) {
+static void rgb_led_write_comlete_callback(void) {
     (void)rgb_led_write_complete();
+}
+
+static void chassis_control_callback(void) {
+    chassis_control_flag = true;
 }

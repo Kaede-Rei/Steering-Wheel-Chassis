@@ -22,6 +22,7 @@
 #include "dma.h"
 #include "fdcan.h"
 #include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -102,6 +103,7 @@ int main(void)
   MX_SPI6_Init();
   MX_FDCAN2_Init();
   MX_SPI2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
     entry_init();
   /* USER CODE END 2 */
