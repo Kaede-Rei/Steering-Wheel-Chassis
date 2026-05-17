@@ -14,8 +14,7 @@
 #include "chassis.h"
 
 // ! device ! //
-#include "bus_motor/agv_motor.h"
-
+#include "imu/BMI088/inc/BMI088driver.h"
 
 // ! domain ! //
 
@@ -32,7 +31,12 @@
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 static ms_t chassis_task = 0;
-static ms_t motor_log_task = 0;
+static ms_t log_task = 0;
+static ms_t imu_task = 0;
+
+static float accel[3] = { 0.0f };
+static float gyro[3] = { 0.0f };
+static float temp = 0.0f;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
@@ -41,6 +45,12 @@ static ms_t motor_log_task = 0;
  */
 static inline void entry_init(void) {
     assemble_init();
+
+    uint8_t res = BMI088_init();
+    if(res != BMI088_NO_ERROR) {
+        log_error("BMI088 initialization failed: %d", res);
+    }
+
     chassis.set_velocity(0.0f, 0.0f, 1.0f);
 }
 
@@ -52,19 +62,12 @@ static inline void entry_loop(void) {
         chassis.process();
     }
 
-    if(delay_nb_ms(&motor_log_task, 1000)) {
-        log_info("steer[1] cur=%.3f tgt=%.3f spd=%.3f | drive[1] cur=%.3f tgt=%.3f tor=%.3f",
-            steer_motor.get_pos(1u), chassis.control()->wheels[0].steer_angle, steer_motor.get_spd(1u),
-            drive_motor.get_spd(1u), chassis.control()->wheels[0].wheel_omega, drive_motor.get_tor(1u));
-        log_info("steer[2] cur=%.3f tgt=%.3f spd=%.3f | drive[2] cur=%.3f tgt=%.3f tor=%.3f",
-            steer_motor.get_pos(2u), chassis.control()->wheels[1].steer_angle, steer_motor.get_spd(2u),
-            drive_motor.get_spd(2u), chassis.control()->wheels[1].wheel_omega, drive_motor.get_tor(2u));
-        log_info("steer[3] cur=%.3f tgt=%.3f spd=%.3f | drive[3] cur=%.3f tgt=%.3f tor=%.3f",
-            steer_motor.get_pos(3u), chassis.control()->wheels[2].steer_angle, steer_motor.get_spd(3u),
-            drive_motor.get_spd(3u), chassis.control()->wheels[2].wheel_omega, drive_motor.get_tor(3u));
-        log_info("steer[4] cur=%.3f tgt=%.3f spd=%.3f | drive[4] cur=%.3f tgt=%.3f tor=%.3f",
-            steer_motor.get_pos(4u), chassis.control()->wheels[3].steer_angle, steer_motor.get_spd(4u),
-            drive_motor.get_spd(4u), chassis.control()->wheels[3].wheel_omega, drive_motor.get_tor(4u));
+    if(delay_nb_ms(&imu_task, 10)) {
+        BMI088_read(gyro, accel, &temp);
+    }
+
+    if(delay_nb_ms(&log_task, 100)) {
+        log_vofa(accel[0], accel[1], accel[2], gyro[0], gyro[1], gyro[2], temp);
     }
 }
 
