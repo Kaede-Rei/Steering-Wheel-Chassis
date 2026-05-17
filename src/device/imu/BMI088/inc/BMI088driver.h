@@ -1,6 +1,7 @@
 #ifndef BMI088DRIVER_H
 #define BMI088DRIVER_H
 
+#include <stdbool.h>
 #include "stdint.h"
 #include "main.h" // IWYU pragma: keep
 
@@ -61,6 +62,12 @@ typedef struct BMI088_REAL_DATA {
     float time;
 } bmi088_real_data_t;
 
+typedef enum BMI088DmaState {
+    BMI088_DMA_IDLE = 0,
+    BMI088_DMA_GYRO,
+    BMI088_DMA_ACCEL
+} bmi088_dma_state_t;
+
 
 enum {
     BMI088_NO_ERROR = 0x00,
@@ -92,7 +99,23 @@ extern uint8_t bmi088_accel_init(void);
 extern uint8_t bmi088_gyro_init(void);
 
 extern void BMI088_read(float gyro[3], float accel[3], float* temperate);
+extern void BMI088_read_gyro(float gyro[3]);
+extern void BMI088_read_accel(float accel[3]);
+extern void BMI088_read_temp(float* temperature);
+
+extern void BMI088_async_init(void);
+extern void BMI088_notify_gyro_data_ready(void);
+extern void BMI088_notify_accel_data_ready(void);
+extern void BMI088_EXTI_Callback(uint16_t gpio_pin);
+extern bool BMI088_async_poll(void);
+extern bool BMI088_async_get_gyro(float gyro[3]);
+extern bool BMI088_async_get_accel(float accel[3]);
+extern bool BMI088_async_is_busy(void);
+extern bmi088_dma_state_t BMI088_async_state(void);
+extern void BMI088_SPI_TxRxCpltCallback(SPI_HandleTypeDef* hspi);
+extern void BMI088_SPI_ErrorCallback(SPI_HandleTypeDef* hspi);
 
 
 
 #endif
+

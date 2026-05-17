@@ -31,7 +31,7 @@
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 static ms_t log_task = 0;
-static ms_t imu_task = 0;
+// static ms_t imu_task = 0;
 
 static float accel[3] = { 0.0f };
 static float gyro[3] = { 0.0f };
@@ -44,12 +44,6 @@ static float temp = 0.0f;
  */
 static inline void entry_init(void) {
     assemble_init();
-
-    uint8_t res = BMI088_init();
-    if(res != BMI088_NO_ERROR) {
-        log_error("BMI088 initialization failed: %d", res);
-    }
-
     chassis.set_velocity(0.0f, 0.0f, 1.0f);
 }
 
@@ -57,20 +51,22 @@ static inline void entry_init(void) {
  * @brief 程序主循环入口函数
  */
 static inline void entry_loop(void) {
-    // ! 周 期 性 任 务 ! //
-    if(delay_nb_ms(&imu_task, 10)) {
-        BMI088_read(gyro, accel, &temp);
-    }
-
-    if(delay_nb_ms(&log_task, 1000)) {
-        SteerWheelState state = *chassis.get_state();
-        log_vofa(state.cur_vx, state.cur_vy, state.cur_wz, gyro[0], gyro[1], gyro[2], temp);
-    }
-
     // ! 事 件 驱 动 任 务 ! //
     if(chassis_control_flag) {
         chassis_control_flag = false;
         chassis.process();
+    }
+
+    BMI088_async_poll();
+    BMI088_async_get_accel(accel);
+    BMI088_async_get_gyro(gyro);
+
+    // ! 周 期 性 任 务 ! //
+    if(delay_nb_ms(&log_task, 1000)) {
+        SteerWheelState state = *chassis.get_state();
+
+        BMI088_read_temp(&temp);
+        log_vofa(state.cur_vx, state.cur_vy, state.cur_wz, gyro[0], gyro[1], gyro[2], temp);
     }
 }
 
