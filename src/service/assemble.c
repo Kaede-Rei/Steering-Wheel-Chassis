@@ -57,6 +57,8 @@ static void chassis_control_callback(void);
 
 void assemble_init(void) {
     delay_ms_init(HAL_GetTick);
+    delay_ms(500);
+
     assemble_log();
     assemble_imu();
     assemble_rgb_led();
