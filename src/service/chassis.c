@@ -4,7 +4,6 @@
 #include "bus_motor/dji_motor.h"
 #include "bus_motor/dm_motor.h"
 #include "delay.h"
-#include "fdcan.h"
 
 #include <math.h>
 #include <stdbool.h>
@@ -16,6 +15,7 @@
 
 #define CHASSIS_DEFAULT_WHEEL_DRIVE_RATIO 1.0f
 #define CHASSIS_STEER_TRACK_SPEED_RAD_S   6.28f
+#define CHASSIS_DRIVE_ANGLE_TOL_RAD       0.08f
 #define CHASSIS_BRAKE_ANGLE_TOL_RAD       0.12f
 #define CHASSIS_PI                        3.14159265358979323846f
 
@@ -55,7 +55,7 @@ const struct ChassisInterface chassis_interface = {
 };
 #undef X
 
-// ! ========================= 私有函数声明 ========================= ! //
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 static float chassis_wheel_omega_to_drive_omega(float wheel_omega);
 static float chassis_drive_omega_to_wheel_omega(float drive_omega);
@@ -70,6 +70,7 @@ static void chassis_external_to_internal_twist(float vx_ext, float vy_ext, float
 static void chassis_internal_to_external_twist(float vx_int, float vy_int, float wz_int, float* vx_ext, float* vy_ext, float* wz_ext);
 static float chassis_wrap_pi(float angle);
 static float chassis_select_nearest_equivalent_angle(float current_angle, float target_angle);
+static bool chassis_drive_targets_reached(void);
 static void chassis_set_brake_targets(void);
 static bool chassis_brake_targets_reached(void);
 
@@ -229,17 +230,21 @@ ChassisErrorCode chassis_process(void) {
         s_chassis.kine.state.cur_wz = 0.0f;
     }
     else {
+        bool drive_ready;
+
         if(swheel.ik(&s_chassis.kine) != swheel.OK) {
             return ch.KINEMATICS_FAILED;
         }
+
+        drive_ready = chassis_drive_targets_reached();
 
         for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
             const ChassisModuleMap* map = &s_module_map[i];
             float target_speed =
                 chassis_wheel_omega_to_drive_omega(s_chassis.kine.control.wheels[map->module].wheel_omega);
 
-            (void)drive_motor.set_spd(map->dji_id, (float)map->drive_sign * target_speed);
             (void)steer_motor.set_pos_vel(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle, CHASSIS_STEER_TRACK_SPEED_RAD_S);
+            (void)drive_motor.set_spd(map->dji_id, drive_ready ? ((float)map->drive_sign * target_speed) : 0.0f);
         }
 
         if(swheel.fk(&s_chassis.kine) != swheel.OK) {
@@ -470,6 +475,22 @@ static float chassis_select_nearest_equivalent_angle(float current_angle, float 
     }
 
     return option_a;
+}
+
+static bool chassis_drive_targets_reached(void) {
+    uint8_t i;
+
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        float current_angle = s_chassis.kine.state.cur_wheels[i].steer_angle;
+        float target_angle = s_chassis.kine.control.wheels[i].steer_angle;
+        float angle_error = chassis_wrap_pi(target_angle - current_angle);
+
+        if(fabsf(angle_error) > CHASSIS_DRIVE_ANGLE_TOL_RAD) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static void chassis_set_brake_targets(void) {

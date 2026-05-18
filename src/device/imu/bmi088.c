@@ -421,8 +421,6 @@ static const char* bmi088_status_str(ImuStatus status) {
     }
 }
 
-// ! ========================= BMI088 底层实现 ========================= ! //
-
 /**
  * @brief 初始化 BMI088 设备
  */
@@ -714,8 +712,6 @@ static void bmi088_spi_error(SPI_HandleTypeDef* hspi) {
     bmi088_release_all_cs();
     s_bmi088_dma_state = BMI088_DMA_IDLE;
 }
-
-// ! ========================= BMI088 SPI 实现 ========================= ! //
 
 /**
  * @brief 初始化 BMI088 GPIO
@@ -1023,8 +1019,6 @@ static void bmi088_dma_maintain_after_finish(uint16_t len) {
     (void)len;
 #endif
 }
-
-// ! ========================= 私有函数实现 ========================= ! //
 
 /**
  * @brief 将原始三轴数组转换为加速度结构体
