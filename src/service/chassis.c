@@ -204,8 +204,7 @@ ChassisErrorCode chassis_process(void) {
                 const ChassisModuleMap* map = &s_module_map[i];
 
                 (void)drive_motor.stop(map->dji_id);
-                (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
-                (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
+                (void)steer_motor.set_pos_vel(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle, CHASSIS_STEER_TRACK_SPEED_RAD_S);
             }
 
             if(chassis_brake_targets_reached()) {
@@ -240,8 +239,7 @@ ChassisErrorCode chassis_process(void) {
                 chassis_wheel_omega_to_drive_omega(s_chassis.kine.control.wheels[map->module].wheel_omega);
 
             (void)drive_motor.set_spd(map->dji_id, (float)map->drive_sign * target_speed);
-            (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
-            (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
+            (void)steer_motor.set_pos_vel(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle, CHASSIS_STEER_TRACK_SPEED_RAD_S);
         }
 
         if(swheel.fk(&s_chassis.kine) != swheel.OK) {
