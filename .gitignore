@@ -12,3 +12,5 @@ Drivers/
 .project
 STM32H723VGTX_FLASH.ld
 STM32H723VGTX_RAM.ld
+
+plan.md

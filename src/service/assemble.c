@@ -5,12 +5,14 @@
 
 // ! service ! //
 #include "chassis.h"
+#include "remote.h"
 
 // ! device ! //
 #include "rgb_led/rgb_led.h"
 #include "rgb_led/ws2812_rgb_led.h"
 #include "imu/imu.h"
 #include "imu/bmi088.h"
+#include "fs_ia10b.h"
 
 // ! infra ! //
 #include "delay.h"
@@ -46,6 +48,7 @@ static void assemble_log(void);
 static void assemble_imu(void);
 static void assemble_rgb_led(void);
 static void assemble_chassis(void);
+static void assemble_remote(void);
 
 static void rgb_led_write_complete_callback(SPI_HandleTypeDef* hspi);
 static void chassis_control_callback(void);
@@ -57,6 +60,7 @@ void assemble_init(void) {
     assemble_log();
     assemble_imu();
     assemble_rgb_led();
+    assemble_remote();
     assemble_chassis();
 
     delay_ms(500);
@@ -80,11 +84,11 @@ static void assemble_imu(void) {
 
     assert(imu_set_instance(&bmi088_instance) == IMU_STATUS_OK);
 
-    status = imu_init();
+    status = imu.init();
     if(status != IMU_STATUS_OK) {
         log_error(
             "BMI088 initialization failed: %s (%s)",
-            imu_status_str(status),
+            imu.status_str(status),
             bmi088_error_str(bmi088_get_init_error()));
     }
 
@@ -112,6 +116,11 @@ static void assemble_rgb_led(void) {
     spi_register_tx_complete_callback(&hspi6, rgb_led_write_complete_callback);
     rgb_led.fill(0U, 255U, 0U);
     rgb_led.show();
+}
+
+static void assemble_remote(void) {
+    ibus_init();
+    remote_init();
 }
 
 static void assemble_chassis(void) {

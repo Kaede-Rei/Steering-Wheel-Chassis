@@ -6,6 +6,7 @@
 #include "delay.h"
 #include "fdcan.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -14,7 +15,10 @@
 #define ch chassis_interface
 
 #define CHASSIS_DEFAULT_WHEEL_DRIVE_RATIO 1.0f
-#define CHASSIS_STEER_TRACK_SPEED_RAD_S   3.14f
+#define CHASSIS_STEER_TRACK_SPEED_RAD_S   6.28f
+#define CHASSIS_BRAKE_ANGLE_TOL_RAD       0.12f
+#define CHASSIS_PI                        3.14159265358979323846f
+
 typedef struct {
     ChassisModule module;
     uint8_t dm_id;
@@ -43,6 +47,7 @@ const struct ChassisInterface chassis_interface = {
     .set_velocity = chassis_set_velocity,
     .process = chassis_process,
     .stop = chassis_stop,
+    .brake = chassis_brake,
     .get_chassis = chassis_get_chassis,
     .get_state = chassis_get_state,
     .get_control = chassis_get_control,
@@ -63,6 +68,10 @@ static void chassis_dm_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_Rx
 static void chassis_dji_can_rx_callback(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8], void* user);
 static void chassis_external_to_internal_twist(float vx_ext, float vy_ext, float wz_ext, float* vx_int, float* vy_int, float* wz_int);
 static void chassis_internal_to_external_twist(float vx_int, float vy_int, float wz_int, float* vx_ext, float* vy_ext, float* wz_ext);
+static float chassis_wrap_pi(float angle);
+static float chassis_select_nearest_equivalent_angle(float current_angle, float target_angle);
+static void chassis_set_brake_targets(void);
+static bool chassis_brake_targets_reached(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -98,6 +107,8 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     drive_motor_set_instance(&dji_motor_instance);
 
     s_chassis.config = *config;
+    s_chassis.brake_requested = 0u;
+    s_chassis.brake_latched = 0u;
     s_chassis.initialized = 0u;
     s_dm_can = config->dm_hcan;
     s_dji_can = config->dji_hcan;
@@ -134,6 +145,8 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
         return ch.NOT_INITIALIZED;
     }
 
+    s_chassis.brake_requested = 0u;
+    s_chassis.brake_latched = 0u;
     chassis_external_to_internal_twist(vx, vy, wz,
         &s_chassis.kine.control.vx, &s_chassis.kine.control.vy, &s_chassis.kine.control.wz);
 
@@ -163,22 +176,57 @@ ChassisErrorCode chassis_process(void) {
             steer_motor.get_pos(map->dm_id);
     }
 
-    if(swheel.ik(&s_chassis.kine) != swheel.OK) {
-        return ch.KINEMATICS_FAILED;
+    if(s_chassis.brake_requested != 0u) {
+        chassis_set_brake_targets();
+
+        if(s_chassis.brake_latched == 0u) {
+            for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+                const ChassisModuleMap* map = &s_module_map[i];
+
+                (void)drive_motor.stop(map->dji_id);
+                (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
+                (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
+            }
+
+            if(chassis_brake_targets_reached()) {
+                s_chassis.brake_latched = 1u;
+            }
+        }
+
+        if(s_chassis.brake_latched != 0u) {
+            for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+                const ChassisModuleMap* map = &s_module_map[i];
+
+                (void)steer_motor.brake(map->dm_id);
+                (void)drive_motor.brake(map->dji_id);
+            }
+        }
+
+        for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+            s_chassis.kine.state.cur_wheels[i].wheel_omega = 0.0f;
+        }
+        s_chassis.kine.state.cur_vx = 0.0f;
+        s_chassis.kine.state.cur_vy = 0.0f;
+        s_chassis.kine.state.cur_wz = 0.0f;
     }
+    else {
+        if(swheel.ik(&s_chassis.kine) != swheel.OK) {
+            return ch.KINEMATICS_FAILED;
+        }
 
-    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
-        const ChassisModuleMap* map = &s_module_map[i];
-        float target_speed =
-            chassis_wheel_omega_to_drive_omega(s_chassis.kine.control.wheels[map->module].wheel_omega);
+        for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+            const ChassisModuleMap* map = &s_module_map[i];
+            float target_speed =
+                chassis_wheel_omega_to_drive_omega(s_chassis.kine.control.wheels[map->module].wheel_omega);
 
-        (void)drive_motor.set_spd(map->dji_id, (float)map->drive_sign * target_speed);
-        (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
-        (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
-    }
+            (void)drive_motor.set_spd(map->dji_id, (float)map->drive_sign * target_speed);
+            (void)steer_motor.set_spd(map->dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
+            (void)steer_motor.set_pos(map->dm_id, s_chassis.kine.control.wheels[map->module].steer_angle);
+        }
 
-    if(swheel.fk(&s_chassis.kine) != swheel.OK) {
-        return ch.KINEMATICS_FAILED;
+        if(swheel.fk(&s_chassis.kine) != swheel.OK) {
+            return ch.KINEMATICS_FAILED;
+        }
     }
 
     s_chassis_view = s_chassis;
@@ -198,11 +246,26 @@ ChassisErrorCode chassis_stop(void) {
     s_chassis.kine.control.vx = 0.0f;
     s_chassis.kine.control.vy = 0.0f;
     s_chassis.kine.control.wz = 0.0f;
+    s_chassis.brake_requested = 0u;
+    s_chassis.brake_latched = 0u;
 
     for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
         (void)steer_motor.brake(s_module_map[i].dm_id);
         (void)drive_motor.stop(s_module_map[i].dji_id);
     }
+
+    return ch.OK;
+}
+
+ChassisErrorCode chassis_brake(void) {
+    if(s_chassis.initialized == 0u) {
+        return ch.NOT_INITIALIZED;
+    }
+
+    s_chassis.kine.control.vx = 0.0f;
+    s_chassis.kine.control.vy = 0.0f;
+    s_chassis.kine.control.wz = 0.0f;
+    s_chassis.brake_requested = 1u;
 
     return ch.OK;
 }
@@ -340,4 +403,67 @@ static void chassis_internal_to_external_twist(float vx_int, float vy_int, float
     if(vx_ext != NULL) *vx_ext = vx_int;
     if(vy_ext != NULL) *vy_ext = -vy_int;
     if(wz_ext != NULL) *wz_ext = -wz_int;
+}
+
+static float chassis_wrap_pi(float angle) {
+    while(angle > CHASSIS_PI) {
+        angle -= 2.0f * CHASSIS_PI;
+    }
+    while(angle <= -CHASSIS_PI) {
+        angle += 2.0f * CHASSIS_PI;
+    }
+
+    return angle;
+}
+
+static float chassis_select_nearest_equivalent_angle(float current_angle, float target_angle) {
+    float option_a = chassis_wrap_pi(target_angle);
+    float option_b = chassis_wrap_pi(target_angle + CHASSIS_PI);
+    float error_a = chassis_wrap_pi(option_a - current_angle);
+    float error_b = chassis_wrap_pi(option_b - current_angle);
+
+    if(fabsf(error_b) < fabsf(error_a)) {
+        return option_b;
+    }
+
+    return option_a;
+}
+
+static void chassis_set_brake_targets(void) {
+    const float hx = s_chassis.config.model.length * 0.5f;
+    const float hy = s_chassis.config.model.width * 0.5f;
+    float target_fl = atan2f(hy, -hx);
+    float target_fr = atan2f(-hy, -hx);
+    float target_rr = atan2f(-hy, hx);
+    float target_rl = atan2f(hy, hx);
+
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_FL].wheel_omega = 0.0f;
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_FR].wheel_omega = 0.0f;
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_RR].wheel_omega = 0.0f;
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_RL].wheel_omega = 0.0f;
+
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_FL].steer_angle =
+        chassis_select_nearest_equivalent_angle(s_chassis.kine.state.cur_wheels[CHASSIS_MODULE_FL].steer_angle, target_fl);
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_FR].steer_angle =
+        chassis_select_nearest_equivalent_angle(s_chassis.kine.state.cur_wheels[CHASSIS_MODULE_FR].steer_angle, target_fr);
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_RR].steer_angle =
+        chassis_select_nearest_equivalent_angle(s_chassis.kine.state.cur_wheels[CHASSIS_MODULE_RR].steer_angle, target_rr);
+    s_chassis.kine.control.wheels[CHASSIS_MODULE_RL].steer_angle =
+        chassis_select_nearest_equivalent_angle(s_chassis.kine.state.cur_wheels[CHASSIS_MODULE_RL].steer_angle, target_rl);
+}
+
+static bool chassis_brake_targets_reached(void) {
+    uint8_t i;
+
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        float current_angle = s_chassis.kine.state.cur_wheels[i].steer_angle;
+        float target_angle = s_chassis.kine.control.wheels[i].steer_angle;
+        float angle_error = chassis_wrap_pi(target_angle - current_angle);
+
+        if(fabsf(angle_error) > CHASSIS_BRAKE_ANGLE_TOL_RAD) {
+            return false;
+        }
+    }
+
+    return true;
 }

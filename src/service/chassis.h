@@ -46,6 +46,8 @@ typedef struct {
 typedef struct {
     SteerWheel kine;
     ChassisConfig config;
+    uint8_t brake_requested;
+    uint8_t brake_latched;
     uint8_t initialized;
 } Chassis;
 
@@ -59,6 +61,7 @@ extern const struct ChassisInterface {
     ChassisErrorCode(*set_velocity)(float vx, float vy, float wz);
     ChassisErrorCode(*process)(void);
     ChassisErrorCode(*stop)(void);
+    ChassisErrorCode(*brake)(void);
     const Chassis* (*get_chassis)(void);
     const SteerWheelState* (*get_state)(void);
     const SteerWheelControl* (*get_control)(void);
@@ -73,6 +76,7 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config);
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz);
 ChassisErrorCode chassis_process(void);
 ChassisErrorCode chassis_stop(void);
+ChassisErrorCode chassis_brake(void);
 const Chassis* chassis_get_chassis(void);
 const SteerWheelState* chassis_get_state(void);
 const SteerWheelControl* chassis_get_control(void);
