@@ -60,7 +60,7 @@
  */
 #define REMOTE_MAX_VX_MPS   2.0f
 #define REMOTE_MAX_VY_MPS   2.0f
-#define REMOTE_MAX_WZ_RAD_S 6.0f
+#define REMOTE_MAX_WZ_RAD_S 8.0f
 
 /**
  * @brief VR 通道下拨与上拨阈值，单位为原始通道值
