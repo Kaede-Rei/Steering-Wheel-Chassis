@@ -3,28 +3,67 @@
 #include <stddef.h>
 #include <string.h>
 
-// ! ========================= 变量声明 ========================= ! //
+// ! ========================= 变 量 声 明 ========================= ! //
 
+/**
+ * @brief CAN 发送等待邮箱空闲的超时时间，单位 ms
+ */
 #define CAN_TX_TIMEOUT_MS 2u
+/**
+ * @brief 可注册的 CAN 接收回调槽位数量
+ */
 #define CAN_RX_CALLBACK_SLOT_NUM 4u
 
+/**
+ * @brief CAN 接收回调注册槽位
+ * @param hcan 对应的 CAN 句柄
+ * @param callback 已注册的回调函数
+ * @param user 用户上下文指针
+ */
 typedef struct {
     FDCAN_HandleTypeDef* hcan;
     STM32HalCanRxCallback callback;
     void* user;
 } CanRxCallbackSlot;
 
+/**
+ * @brief CAN 接收回调槽位表
+ */
 static CanRxCallbackSlot s_rx_slots[CAN_RX_CALLBACK_SLOT_NUM];
 
-// ! ========================= 私有函数声明 ========================= ! //
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
 
+/**
+ * @brief 将字节长度转换为 FDCAN DLC 编码
+ * @param len 数据长度
+ * @return uint32_t DLC 编码值
+ */
 static uint32_t can_len_to_dlc(uint8_t len);
+/**
+ * @brief 配置指定 CAN 句柄的全局过滤器
+ * @param hcan CAN 句柄
+ * @return BspCanStatus 状态码
+ */
 static BspCanStatus can_config_global_filter(FDCAN_HandleTypeDef* hcan);
+/**
+ * @brief 分发一帧接收到的数据到已注册回调
+ * @param hcan CAN 句柄
+ * @param header 接收帧头
+ * @param data 接收数据
+ */
 static void can_dispatch_rx(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8]);
+/**
+ * @brief 使能 CAN 收发器
+ * @param hcan CAN 句柄
+ */
 static void can_enable_transceiver(FDCAN_HandleTypeDef* hcan);
 
-// ! ========================= 接口函数实现 ========================= ! //
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
 
+/**
+ * @brief 初始化全局 CAN 过滤器
+ * @return BspCanStatus 状态码
+ */
 BspCanStatus can_filter_init(void) {
     BspCanStatus status;
 
@@ -41,6 +80,11 @@ BspCanStatus can_filter_init(void) {
     return STM32_HAL_CAN_OK;
 }
 
+/**
+ * @brief 启动指定 CAN 外设并使能接收中断
+ * @param hcan CAN 句柄
+ * @return BspCanStatus 状态码
+ */
 BspCanStatus can_start(FDCAN_HandleTypeDef* hcan) {
     if(hcan == NULL) {
         return STM32_HAL_CAN_INVALID_PARAM;
@@ -63,6 +107,14 @@ BspCanStatus can_start(FDCAN_HandleTypeDef* hcan) {
     return STM32_HAL_CAN_OK;
 }
 
+/**
+ * @brief 发送一帧经典 CAN 数据
+ * @param hcan CAN 句柄
+ * @param id 帧 ID
+ * @param data 数据缓冲区
+ * @param len 数据长度，最大 8 字节
+ * @return BspCanStatus 状态码
+ */
 BspCanStatus can_send(FDCAN_HandleTypeDef* hcan, uint32_t id, const uint8_t* data, uint8_t len) {
     FDCAN_TxHeaderTypeDef tx_header = { 0 };
     const uint32_t start_tick = HAL_GetTick();
@@ -97,6 +149,13 @@ BspCanStatus can_send(FDCAN_HandleTypeDef* hcan, uint32_t id, const uint8_t* dat
     return STM32_HAL_CAN_OK;
 }
 
+/**
+ * @brief 注册指定 CAN 句柄的接收回调函数
+ * @param hcan CAN 句柄
+ * @param callback 回调函数
+ * @param user 用户上下文指针
+ * @return BspCanStatus 状态码
+ */
 BspCanStatus can_register_rx_callback(FDCAN_HandleTypeDef* hcan, STM32HalCanRxCallback callback, void* user) {
     uint8_t i;
 
@@ -123,6 +182,11 @@ BspCanStatus can_register_rx_callback(FDCAN_HandleTypeDef* hcan, STM32HalCanRxCa
     return STM32_HAL_CAN_NO_CALLBACK_SLOT;
 }
 
+/**
+ * @brief 将 CAN 抽象层状态码转换为静态字符串
+ * @param status 状态码
+ * @return const char* 状态码名称
+ */
 #define X(name, str) case STM32_HAL_CAN_##name: return str;
 const char* can_error_code_to_str(BspCanStatus status) {
     switch(status) {
@@ -132,6 +196,13 @@ const char* can_error_code_to_str(BspCanStatus status) {
 }
 #undef X
 
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
+
+/**
+ * @brief HAL FDCAN FIFO0 接收回调入口
+ * @param hfdcan 触发回调的 CAN 句柄
+ * @param rx_fifo0_its FIFO0 中断标志
+ */
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef* hfdcan, uint32_t rx_fifo0_its) {
     FDCAN_RxHeaderTypeDef rx_header;
     uint8_t rx_data[8];
@@ -149,8 +220,11 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef* hfdcan, uint32_t rx_fifo0_it
     }
 }
 
-// ! ========================= 私有函数实现 ========================= ! //
-
+/**
+ * @brief 将字节长度转换为 FDCAN DLC 编码
+ * @param len 数据长度
+ * @return uint32_t DLC 编码值
+ */
 static uint32_t can_len_to_dlc(uint8_t len) {
     static const uint32_t dlc_table[9] = {
         FDCAN_DLC_BYTES_0,
@@ -167,6 +241,11 @@ static uint32_t can_len_to_dlc(uint8_t len) {
     return dlc_table[len];
 }
 
+/**
+ * @brief 配置指定 CAN 句柄的全局过滤器
+ * @param hcan CAN 句柄
+ * @return BspCanStatus 状态码
+ */
 static BspCanStatus can_config_global_filter(FDCAN_HandleTypeDef* hcan) {
     if(hcan == NULL) {
         return STM32_HAL_CAN_INVALID_PARAM;
@@ -183,6 +262,12 @@ static BspCanStatus can_config_global_filter(FDCAN_HandleTypeDef* hcan) {
     return STM32_HAL_CAN_OK;
 }
 
+/**
+ * @brief 分发一帧接收到的数据到已注册回调
+ * @param hcan CAN 句柄
+ * @param header 接收帧头
+ * @param data 接收数据
+ */
 static void can_dispatch_rx(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeDef* header, const uint8_t data[8]) {
     uint8_t i;
 
@@ -193,6 +278,10 @@ static void can_dispatch_rx(FDCAN_HandleTypeDef* hcan, const FDCAN_RxHeaderTypeD
     }
 }
 
+/**
+ * @brief 使能 CAN 收发器
+ * @param hcan CAN 句柄
+ */
 static void can_enable_transceiver(FDCAN_HandleTypeDef* hcan) {
     if(hcan == NULL) {
         return;

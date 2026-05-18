@@ -26,7 +26,7 @@ src/device/imu
 
 ### 阻塞式最小使用示例
 
-适合先快速确认 BMI088 通了没有。
+适合先快速确认 BMI088 通了没有
 
 ```c
 #include "imu/imu.h"
@@ -54,7 +54,7 @@ void app_loop(void) {
 
 ### IT + DMA 使用示例
 
-适合运行阶段的高频采样。
+适合运行阶段的高频采样
 
 ```c
 #include "imu/imu.h"

@@ -131,7 +131,7 @@ static bool ibus_uart_init_inverted(void) {
 
     /**
      * 实测这套 FS-iA10B -> UART5_RX 的接线下，
-     * i.BUS 帧内容本身是正确的，但 RX 电平极性与普通非反相 UART 假设相反。
+     * i.BUS 帧内容本身是正确的，但 RX 电平极性与普通非反相 UART 假设相反
      *
      * 非反相读取时只能看到稳定乱码；启用 RX 反相后即可稳定解出：
      * 20 40 ... checksum

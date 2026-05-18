@@ -55,7 +55,7 @@ const struct ChassisInterface chassis_interface = {
 };
 #undef X
 
-// ! ========================= 私 有 函 数 声 明 ========================= ! //
+// ! ========================= 私有函数声明 ========================= ! //
 
 static float chassis_wheel_omega_to_drive_omega(float wheel_omega);
 static float chassis_drive_omega_to_wheel_omega(float drive_omega);
@@ -75,11 +75,20 @@ static bool chassis_brake_targets_reached(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
+/**
+ * @brief 使用默认配置初始化底盘
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_init(void) {
     ChassisConfig config = chassis_default_config();
     return chassis_init_with_config(&config);
 }
 
+/**
+ * @brief 使用指定配置初始化底盘
+ * @param config 底盘配置
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     static const BusMotorPortOps steer_ops = {
         .send = chassis_dm_can_send,
@@ -140,6 +149,13 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     return ch.OK;
 }
 
+/**
+ * @brief 设置底盘目标速度
+ * @param vx 底盘 x 方向目标线速度，单位 m/s
+ * @param vy 底盘 y 方向目标线速度，单位 m/s
+ * @param wz 底盘 z 轴目标角速度，单位 rad/s
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
     if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
@@ -153,6 +169,10 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
     return ch.OK;
 }
 
+/**
+ * @brief 执行一次底盘控制流程
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_process(void) {
     uint8_t i;
 
@@ -236,6 +256,10 @@ ChassisErrorCode chassis_process(void) {
     return ch.OK;
 }
 
+/**
+ * @brief 停止底盘运动
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_stop(void) {
     uint8_t i;
 
@@ -257,6 +281,10 @@ ChassisErrorCode chassis_stop(void) {
     return ch.OK;
 }
 
+/**
+ * @brief 请求底盘进入驻车刹车状态
+ * @return ChassisErrorCode 状态码
+ */
 ChassisErrorCode chassis_brake(void) {
     if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
@@ -270,18 +298,35 @@ ChassisErrorCode chassis_brake(void) {
     return ch.OK;
 }
 
+/**
+ * @brief 获取底盘实例只读视图
+ * @return const Chassis* 底盘实例指针
+ */
 const Chassis* chassis_get_chassis(void) {
     return &s_chassis_view;
 }
 
+/**
+ * @brief 获取底盘当前状态只读视图
+ * @return const SteerWheelState* 当前状态指针
+ */
 const SteerWheelState* chassis_get_state(void) {
     return &s_chassis_view.kine.state;
 }
 
+/**
+ * @brief 获取底盘当前控制量只读视图
+ * @return const SteerWheelControl* 当前控制量指针
+ */
 const SteerWheelControl* chassis_get_control(void) {
     return &s_chassis_view.kine.control;
 }
 
+/**
+ * @brief 将底盘状态码转换为静态字符串
+ * @param status 底盘状态码
+ * @return const char* 状态码名称
+ */
 #define X(name, str) case CHASSIS_##name: return str;
 const char* chassis_error_code_to_str(ChassisErrorCode status) {
     switch(status) {

@@ -79,13 +79,13 @@ typedef enum {
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
-static ImuStatus bmi088_init_impl(void);
-static ImuStatus bmi088_update_impl(void);
-static ImuStatus bmi088_blocking_update_impl(void);
-static ImuAcc bmi088_get_acc_impl(void);
-static ImuGyro bmi088_get_gyro_impl(void);
-static ImuAngle bmi088_get_angle_impl(void);
-static const char* bmi088_status_str_impl(ImuStatus status);
+static ImuStatus bmi088_init(void);
+static ImuStatus bmi088_update(void);
+static ImuStatus bmi088_blocking_update(void);
+static ImuAcc bmi088_get_acc(void);
+static ImuGyro bmi088_get_gyro(void);
+static ImuAngle bmi088_get_angle(void);
+static const char* bmi088_status_str(ImuStatus status);
 
 static void bmi088_gpio_init(void);
 static void bmi088_com_init(void);
@@ -111,8 +111,8 @@ static void bmi088_notify_accel_data_ready(void);
 static bool bmi088_async_poll(void);
 static bool bmi088_async_get_gyro(float gyro[3]);
 static bool bmi088_async_get_accel(float accel[3]);
-static void bmi088_spi_txrx_complete_impl(SPI_HandleTypeDef* hspi);
-static void bmi088_spi_error_impl(SPI_HandleTypeDef* hspi);
+static void bmi088_spi_txrx_complete(SPI_HandleTypeDef* hspi);
+static void bmi088_spi_error(SPI_HandleTypeDef* hspi);
 
 static void bmi088_write_single_reg(uint8_t reg, uint8_t data);
 static void bmi088_read_single_reg(uint8_t reg, uint8_t* return_data);
@@ -189,24 +189,24 @@ static bool s_bmi088_has_acc = false;
  * @brief BMI088 通用 IMU 实例
  */
 const ImuInterface bmi088_instance = {
-    .init = bmi088_init_impl,
-    .update = bmi088_update_impl,
-    .get_acc = bmi088_get_acc_impl,
-    .get_gyro = bmi088_get_gyro_impl,
-    .get_angle = bmi088_get_angle_impl,
-    .status_str = bmi088_status_str_impl,
+    .init = bmi088_init,
+    .update = bmi088_update,
+    .get_acc = bmi088_get_acc,
+    .get_gyro = bmi088_get_gyro,
+    .get_angle = bmi088_get_angle,
+    .status_str = bmi088_status_str,
 };
 
 /**
  * @brief BMI088 阻塞式 IMU 实例
  */
 const ImuInterface bmi088_blocking_instance = {
-    .init = bmi088_init_impl,
-    .update = bmi088_blocking_update_impl,
-    .get_acc = bmi088_get_acc_impl,
-    .get_gyro = bmi088_get_gyro_impl,
-    .get_angle = bmi088_get_angle_impl,
-    .status_str = bmi088_status_str_impl,
+    .init = bmi088_init,
+    .update = bmi088_blocking_update,
+    .get_acc = bmi088_get_acc,
+    .get_gyro = bmi088_get_gyro,
+    .get_angle = bmi088_get_angle,
+    .status_str = bmi088_status_str,
 };
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
@@ -272,14 +272,14 @@ void bmi088_exti_callback(uint16_t gpio_pin) {
  * @brief BMI088 SPI DMA 完成回调转发
  */
 void bmi088_spi_txrx_cplt_callback(SPI_HandleTypeDef* hspi) {
-    bmi088_spi_txrx_complete_impl(hspi);
+    bmi088_spi_txrx_complete(hspi);
 }
 
 /**
  * @brief BMI088 SPI 错误回调转发
  */
 void bmi088_spi_error_callback(SPI_HandleTypeDef* hspi) {
-    bmi088_spi_error_impl(hspi);
+    bmi088_spi_error(hspi);
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
@@ -287,7 +287,7 @@ void bmi088_spi_error_callback(SPI_HandleTypeDef* hspi) {
 /**
  * @brief 初始化 BMI088 具体 IMU 实例
  */
-static ImuStatus bmi088_init_impl(void) {
+static ImuStatus bmi088_init(void) {
     s_bmi088_init_error = bmi088_device_init();
     bmi088_async_init();
 
@@ -310,7 +310,7 @@ static ImuStatus bmi088_init_impl(void) {
 /**
  * @brief 更新 BMI088 具体 IMU 实例缓存
  */
-static ImuStatus bmi088_update_impl(void) {
+static ImuStatus bmi088_update(void) {
     float raw_acc[3] = { 0.0f };
     float raw_gyro[3] = { 0.0f };
     bool updated = false;
@@ -353,7 +353,7 @@ static ImuStatus bmi088_update_impl(void) {
 /**
  * @brief 以阻塞读取方式更新 BMI088 具体 IMU 实例缓存
  */
-static ImuStatus bmi088_blocking_update_impl(void) {
+static ImuStatus bmi088_blocking_update(void) {
     float raw_acc[3] = { 0.0f };
     float raw_gyro[3] = { 0.0f };
     uint32_t now_tick = 0U;
@@ -387,28 +387,28 @@ static ImuStatus bmi088_blocking_update_impl(void) {
 /**
  * @brief 获取 BMI088 最近一次缓存的加速度
  */
-static ImuAcc bmi088_get_acc_impl(void) {
+static ImuAcc bmi088_get_acc(void) {
     return s_bmi088_acc;
 }
 
 /**
  * @brief 获取 BMI088 最近一次缓存的角速度
  */
-static ImuGyro bmi088_get_gyro_impl(void) {
+static ImuGyro bmi088_get_gyro(void) {
     return s_bmi088_gyro;
 }
 
 /**
  * @brief 获取 BMI088 最近一次缓存的姿态角
  */
-static ImuAngle bmi088_get_angle_impl(void) {
+static ImuAngle bmi088_get_angle(void) {
     return s_bmi088_angle;
 }
 
 /**
  * @brief 将 IMU 状态码转换为常量字符串
  */
-static const char* bmi088_status_str_impl(ImuStatus status) {
+static const char* bmi088_status_str(ImuStatus status) {
     switch(status) {
         case IMU_STATUS_OK: return "OK";
         case IMU_STATUS_ERROR: return "ERROR";
@@ -682,7 +682,7 @@ static bool bmi088_async_get_accel(float accel[3]) {
 /**
  * @brief 处理 BMI088 SPI DMA 完成中断
  */
-static void bmi088_spi_txrx_complete_impl(SPI_HandleTypeDef* hspi) {
+static void bmi088_spi_txrx_complete(SPI_HandleTypeDef* hspi) {
     if(hspi != bmi088_get_spi_handle()) {
         return;
     }
@@ -706,7 +706,7 @@ static void bmi088_spi_txrx_complete_impl(SPI_HandleTypeDef* hspi) {
 /**
  * @brief 处理 BMI088 SPI 错误中断
  */
-static void bmi088_spi_error_impl(SPI_HandleTypeDef* hspi) {
+static void bmi088_spi_error(SPI_HandleTypeDef* hspi) {
     if(hspi != bmi088_get_spi_handle()) {
         return;
     }

@@ -5,38 +5,95 @@
 
 #include <string.h>
 
+// ! ========================= 变 量 声 明 ========================= ! //
+
+/**
+ * @brief 右摇杆左右对应的 i.BUS 通道索引
+ */
 #define REMOTE_CH_RIGHT_X 0u
+/**
+ * @brief 右摇杆前后对应的 i.BUS 通道索引
+ */
 #define REMOTE_CH_RIGHT_Y 1u
+/**
+ * @brief 左摇杆前后对应的 i.BUS 通道索引
+ */
 #define REMOTE_CH_LEFT_Y 2u
+/**
+ * @brief 左摇杆左右对应的 i.BUS 通道索引
+ */
 #define REMOTE_CH_LEFT_X  3u
 
+/**
+ * @brief 顶部开关的通道索引
+ */
 #define REMOTE_CH_SWA 4u
 #define REMOTE_CH_SWB 5u
 #define REMOTE_CH_SWC 6u
 #define REMOTE_CH_SWD 7u
 
+/**
+ * @brief 两个拨轮的通道索引
+ */
 #define REMOTE_CH_VRA 8u
 #define REMOTE_CH_VRB 9u
 
+/**
+ * @brief 遥控器通道中位值
+ */
 #define REMOTE_CENTER      1500
+/**
+ * @brief 遥控器通道满量程半幅
+ */
 #define REMOTE_SPAN        500.0f
-#define REMOTE_DEADBAND    30u
+/**
+ * @brief 摇杆死区，单位为原始通道值
+ */
+#define REMOTE_DEADBAND    10u
+/**
+ * @brief 遥控链路在线超时时间，单位 ms
+ */
 #define REMOTE_TIMEOUT_MS  100u
 
+/**
+ * @brief 遥控映射到的最大平移/旋转速度
+ */
 #define REMOTE_MAX_VX_MPS   2.0f
 #define REMOTE_MAX_VY_MPS   2.0f
 #define REMOTE_MAX_WZ_RAD_S 6.0f
 
+/**
+ * @brief VRA 通道进入驻车刹车的阈值
+ */
 #define REMOTE_BRAKE_THRESHOLD 1200u
 
+/**
+ * @brief 遥控服务最近一次输出的控制指令
+ */
 static RemoteCommand s_command = { 0 };
 
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
+
+/**
+ * @brief 将遥控器原始通道值归一化到 [-1, 1]
+ * @param value 原始通道值
+ * @param deadband 死区阈值
+ * @return float 归一化结果
+ */
 static float remote_channel_to_norm(uint16_t value, uint16_t deadband);
 
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
+
+/**
+ * @brief 初始化遥控服务内部状态
+ */
 void remote_init(void) {
     memset(&s_command, 0, sizeof(s_command));
 }
 
+/**
+ * @brief 执行一次遥控服务轮询
+ */
 void remote_process(void) {
     FsIa10bData rc_data;
 
@@ -66,6 +123,11 @@ void remote_process(void) {
     (void)chassis.set_velocity(s_command.vx, s_command.vy, s_command.wz);
 }
 
+/**
+ * @brief 获取最近一次遥控服务输出的控制指令
+ * @param out 输出控制指令缓冲区
+ * @return bool `true` 表示当前遥控链路在线，`false` 表示离线
+ */
 bool remote_get_command(RemoteCommand* out) {
     if(out == NULL) {
         return false;
@@ -75,6 +137,14 @@ bool remote_get_command(RemoteCommand* out) {
     return s_command.online;
 }
 
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
+
+/**
+ * @brief 将遥控器原始通道值归一化到 [-1, 1]
+ * @param value 原始通道值
+ * @param deadband 死区阈值
+ * @return float 归一化结果
+ */
 static float remote_channel_to_norm(uint16_t value, uint16_t deadband) {
     int32_t diff = (int32_t)value - REMOTE_CENTER;
     float normalized;
