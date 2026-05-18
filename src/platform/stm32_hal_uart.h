@@ -42,11 +42,27 @@ bool uart1_write(const char* data, uint32_t len);
 bool uart_receive_it(UART_HandleTypeDef* huart, uint8_t* data, uint16_t len);
 
 /**
+ * @brief 启动 UART 空闲行接收 DMA
+ * @param huart UART 句柄
+ * @param data 接收缓冲区
+ * @param len 接收长度
+ * @return bool `true` 表示启动成功
+ */
+bool uart_receive_to_idle_dma(UART_HandleTypeDef* huart, uint8_t* data, uint16_t len);
+
+/**
  * @brief 中止 UART 中断接收
  * @param huart UART 句柄
  * @return bool `true` 表示中止成功
  */
 bool uart_abort_receive_it(UART_HandleTypeDef* huart);
+
+/**
+ * @brief 中止 UART 空闲行接收 DMA
+ * @param huart UART 句柄
+ * @return bool `true` 表示中止成功
+ */
+bool uart_abort_receive_dma(UART_HandleTypeDef* huart);
 
 /**
  * @brief 注册 UART 发送完成回调
@@ -61,6 +77,13 @@ void uart_register_tx_complete_callback(UART_HandleTypeDef* huart, void (*callba
  * @param callback 回调函数
  */
 void uart_register_rx_complete_callback(UART_HandleTypeDef* huart, void (*callback)(void));
+
+/**
+ * @brief 注册 UART 接收事件回调
+ * @param huart UART 句柄
+ * @param callback 回调函数，参数为本次接收的数据长度
+ */
+void uart_register_rx_event_callback(UART_HandleTypeDef* huart, void (*callback)(uint16_t size));
 
 /**
  * @brief 注册 UART 错误回调

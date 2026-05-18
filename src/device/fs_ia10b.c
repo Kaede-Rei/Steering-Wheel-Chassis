@@ -10,8 +10,9 @@
 #define IBUS_HEADER_1 0x40u
 #define IBUS_CHANNEL_MIN 800u
 #define IBUS_CHANNEL_MAX 2200u
+#define IBUS_DMA_RX_BUF_LEN 64u
 
-static uint8_t s_rx_byte = 0u;
+static uint8_t s_dma_rx_buf[IBUS_DMA_RX_BUF_LEN];
 static uint8_t s_frame[FS_IA10B_IBUS_FRAME_LEN];
 static uint8_t s_frame_index = 0u;
 static volatile FsIa10bData s_data;
@@ -19,7 +20,7 @@ static volatile FsIa10bDebug s_debug;
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
-static void ibus_rx_complete_callback(void);
+static void ibus_rx_event_callback(uint16_t size);
 static void ibus_error_callback(void);
 static void ibus_restart_receive(void);
 static bool ibus_uart_init_inverted(void);
@@ -34,11 +35,11 @@ void ibus_init(void) {
     memset((void*)&s_data, 0, sizeof(s_data));
     memset((void*)&s_debug, 0, sizeof(s_debug));
     memset(s_frame, 0, sizeof(s_frame));
+    memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
 
-    s_rx_byte = 0u;
     s_frame_index = 0u;
 
-    uart_register_rx_complete_callback(&huart5, ibus_rx_complete_callback);
+    uart_register_rx_event_callback(&huart5, ibus_rx_event_callback);
     uart_register_error_callback(&huart5, ibus_error_callback);
     (void)ibus_uart_init_inverted();
 }
@@ -108,8 +109,17 @@ uint16_t ibus_get_channel(uint8_t index) {
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
-static void ibus_rx_complete_callback(void) {
-    ibus_feed_byte(s_rx_byte);
+static void ibus_rx_event_callback(uint16_t size) {
+    uint16_t i;
+
+    if(size > IBUS_DMA_RX_BUF_LEN) {
+        size = IBUS_DMA_RX_BUF_LEN;
+    }
+
+    for(i = 0u; i < size; ++i) {
+        ibus_feed_byte(s_dma_rx_buf[i]);
+    }
+
     ibus_restart_receive();
 }
 
@@ -117,16 +127,16 @@ static void ibus_error_callback(void) {
     s_frame_index = 0u;
     s_data.error_count++;
 
-    (void)uart_abort_receive_it(&huart5);
+    (void)uart_abort_receive_dma(&huart5);
     ibus_restart_receive();
 }
 
 static void ibus_restart_receive(void) {
-    (void)uart_receive_it(&huart5, &s_rx_byte, 1u);
+    (void)uart_receive_to_idle_dma(&huart5, s_dma_rx_buf, IBUS_DMA_RX_BUF_LEN);
 }
 
 static bool ibus_uart_init_inverted(void) {
-    (void)uart_abort_receive_it(&huart5);
+    (void)uart_abort_receive_dma(&huart5);
     (void)HAL_UART_DeInit(&huart5);
 
     /**
@@ -170,9 +180,9 @@ static bool ibus_uart_init_inverted(void) {
     }
 
     memset(s_frame, 0, sizeof(s_frame));
+    memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
     memset((void*)&s_debug, 0, sizeof(s_debug));
     s_frame_index = 0u;
-    s_rx_byte = 0u;
     ibus_restart_receive();
     return true;
 }
