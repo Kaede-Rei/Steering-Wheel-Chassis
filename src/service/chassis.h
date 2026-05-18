@@ -3,6 +3,7 @@
 
 #include "stm32_hal_can.h" // IWYU pragma: keep
 #include "steer_wheel_kine.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
@@ -90,6 +91,8 @@ typedef struct {
     ChassisConfig config;
     uint8_t brake_requested;
     uint8_t brake_latched;
+    /** @brief Whether all steer motors have valid feedback after power-on */
+    uint8_t steer_ready;
     uint8_t initialized;
 } Chassis;
 
@@ -144,6 +147,12 @@ extern const struct ChassisInterface {
      * @return ChassisErrorCode 状态码
      */
     ChassisErrorCode(*brake)(void);
+    /**
+     * @brief Check whether chassis cold-start is ready for normal control
+     * @return true All steer motors have valid feedback
+     * @return false Chassis is still waiting for steer motor feedback
+     */
+    bool (*is_ready)(void);
     /**
      * @brief 获取底盘实例只读视图
      * @return const Chassis* 底盘实例指针
@@ -209,6 +218,13 @@ ChassisErrorCode chassis_stop(void);
  * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_brake(void);
+
+/**
+ * @brief Check whether chassis cold-start is ready for normal control
+ * @return true All steer motors have valid feedback
+ * @return false Chassis is still waiting for steer motor feedback
+ */
+bool chassis_is_ready(void);
 
 /**
  * @brief 获取底盘实例只读视图

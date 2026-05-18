@@ -11,10 +11,12 @@
 #define IBUS_CHANNEL_MIN 800u
 #define IBUS_CHANNEL_MAX 2200u
 #define IBUS_DMA_RX_BUF_LEN 64u
+#define IBUS_RX_RESTART_INTERVAL_MS 200u
 
-static uint8_t s_dma_rx_buf[IBUS_DMA_RX_BUF_LEN];
+__attribute__((aligned(32))) static uint8_t s_dma_rx_buf[IBUS_DMA_RX_BUF_LEN];
 static uint8_t s_frame[FS_IA10B_IBUS_FRAME_LEN];
 static uint8_t s_frame_index = 0u;
+static uint32_t s_last_restart_ms = 0u;
 static volatile FsIa10bData s_data;
 static volatile FsIa10bDebug s_debug;
 
@@ -22,7 +24,8 @@ static volatile FsIa10bDebug s_debug;
 
 static void ibus_rx_event_callback(uint16_t size);
 static void ibus_error_callback(void);
-static void ibus_restart_receive(void);
+static bool ibus_restart_receive(void);
+static void ibus_invalidate_dma_buffer(uint16_t size);
 static bool ibus_uart_init_inverted(void);
 static void ibus_feed_byte(uint8_t byte);
 static bool ibus_check_frame(const uint8_t frame[FS_IA10B_IBUS_FRAME_LEN]);
@@ -38,10 +41,27 @@ void ibus_init(void) {
     memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
 
     s_frame_index = 0u;
+    s_last_restart_ms = 0u;
 
     uart_register_rx_event_callback(&huart5, ibus_rx_event_callback);
     uart_register_error_callback(&huart5, ibus_error_callback);
     (void)ibus_uart_init_inverted();
+}
+
+void ibus_maintain(void) {
+    uint32_t now = HAL_GetTick();
+
+    if(s_data.valid && (now - s_data.last_update_ms) <= IBUS_RX_RESTART_INTERVAL_MS) {
+        return;
+    }
+
+    if((now - s_last_restart_ms) < IBUS_RX_RESTART_INTERVAL_MS) {
+        return;
+    }
+
+    s_frame_index = 0u;
+    (void)uart_abort_receive_dma(&huart5);
+    (void)ibus_restart_receive();
 }
 
 bool ibus_get_data(FsIa10bData* out) {
@@ -116,6 +136,8 @@ static void ibus_rx_event_callback(uint16_t size) {
         size = IBUS_DMA_RX_BUF_LEN;
     }
 
+    ibus_invalidate_dma_buffer(size);
+
     for(i = 0u; i < size; ++i) {
         ibus_feed_byte(s_dma_rx_buf[i]);
     }
@@ -131,8 +153,22 @@ static void ibus_error_callback(void) {
     ibus_restart_receive();
 }
 
-static void ibus_restart_receive(void) {
-    (void)uart_receive_to_idle_dma(&huart5, s_dma_rx_buf, IBUS_DMA_RX_BUF_LEN);
+static bool ibus_restart_receive(void) {
+    memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
+    ibus_invalidate_dma_buffer(IBUS_DMA_RX_BUF_LEN);
+    s_last_restart_ms = HAL_GetTick();
+    return uart_receive_to_idle_dma(&huart5, s_dma_rx_buf, IBUS_DMA_RX_BUF_LEN);
+}
+
+static void ibus_invalidate_dma_buffer(uint16_t size) {
+    uintptr_t start = ((uintptr_t)s_dma_rx_buf) & ~(uintptr_t)31U;
+    uintptr_t end = ((uintptr_t)s_dma_rx_buf + size + 31U) & ~(uintptr_t)31U;
+
+    if(size == 0u) {
+        return;
+    }
+
+    SCB_InvalidateDCache_by_Addr((uint32_t*)start, (int32_t)(end - start));
 }
 
 static bool ibus_uart_init_inverted(void) {

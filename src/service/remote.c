@@ -119,6 +119,8 @@ void remote_process(void) {
     FsIa10bData rc_data;
     RemoteSpeedLimit speed_limit;
 
+    ibus_maintain();
+
     if(!ibus_get_data(&rc_data) || !ibus_is_online(REMOTE_TIMEOUT_MS)) {
         s_command.vx = 0.0f;
         s_command.vy = 0.0f;

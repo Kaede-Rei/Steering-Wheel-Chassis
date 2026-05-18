@@ -29,9 +29,9 @@
 /** @brief 认为转向目标发生明显变化并重启 S 曲线的角度阈值，单位 rad */
 #define CHASSIS_STEER_TARGET_CHANGE_RAD   0.03f
 /** @brief 普通行驶时允许驱动电机出力的转向角误差阈值，单位 rad */
-#define CHASSIS_DRIVE_ANGLE_TOL_RAD       0.157f
+#define CHASSIS_DRIVE_ANGLE_TOL_RAD       0.1f
 /** @brief 驻车刹车流程判定转向角到位的误差阈值，单位 rad */
-#define CHASSIS_BRAKE_ANGLE_TOL_RAD       0.157f
+#define CHASSIS_BRAKE_ANGLE_TOL_RAD       0.1f
 /** @brief 圆周率常量，用于角度归一化 */
 #define CHASSIS_PI                        3.14159265358979323846f
 /** @brief 转向角完整周期，单位 rad */
@@ -42,6 +42,8 @@
 #define CHASSIS_EQUIV_ANGLE_HYST_RAD      0.12f
 /** @brief 普通行驶等效舵角最终优化滞回，单位 rad */
 #define CHASSIS_DRIVE_EQUIV_HYST_RAD      0.03f
+/** @brief 转向电机未就绪时重新发送初始化命令的控制周期数 */
+#define CHASSIS_STEER_ENABLE_RETRY_CYCLES 250u
 
 /** @brief 单个舵轮模块与实际 CAN 电机 ID 的映射关系 */
 typedef struct {
@@ -61,6 +63,8 @@ static float s_steer_speed_ramp_time[CHASSIS_MODULE_COUNT] = { 0.0f };
 static float s_steer_speed_last_target[CHASSIS_MODULE_COUNT] = { 0.0f };
 /** @brief 每个舵轮的 S 曲线速度规划状态是否已初始化 */
 static uint8_t s_steer_speed_initialized[CHASSIS_MODULE_COUNT] = { 0u };
+/** @brief 转向电机冷启动重试倒计时，单位为底盘控制周期 */
+static uint16_t s_steer_enable_retry_countdown = 0u;
 /** @brief 转向电机所在 FDCAN 句柄 */
 static FDCAN_HandleTypeDef* s_dm_can = NULL;
 /** @brief 驱动电机所在 FDCAN 句柄 */
@@ -87,6 +91,7 @@ const struct ChassisInterface chassis_interface = {
     .process = chassis_process,
     .stop = chassis_stop,
     .brake = chassis_brake,
+    .is_ready = chassis_is_ready,
     .get_chassis = chassis_get_chassis,
     .get_state = chassis_get_state,
     .get_control = chassis_get_control,
@@ -115,9 +120,12 @@ static float chassis_select_nearest_equivalent_angle(float current_angle, float 
 static void chassis_optimize_drive_module_target(ChassisModule module);
 static void chassis_reset_steer_speed_profiles(void);
 static float chassis_calc_steer_track_speed(ChassisModule module, float target_angle);
+static void chassis_stop_all_drive_motors(void);
+static bool chassis_retry_enable_steer_motors(bool steer_feedback_ready);
 static bool chassis_drive_targets_reached(void);
 static void chassis_set_brake_targets(void);
 static bool chassis_brake_targets_reached(void);
+bool chassis_is_ready(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -172,6 +180,8 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     s_chassis.brake_latched = 0u;
     s_chassis.initialized = 0u;
     chassis_reset_steer_speed_profiles();
+    s_steer_enable_retry_countdown = 0u;
+    s_chassis.steer_ready = 0u;
     s_dm_can = config->dm_hcan;
     s_dji_can = config->dji_hcan;
 
@@ -194,9 +204,7 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     }
 
     delay_ms(500);
-    if(chassis_enable_steer_motors() != ch.OK) {
-        return ch.INVALID_PARAM;
-    }
+    (void)chassis_enable_steer_motors();
 
     s_chassis.initialized = 1u;
     return ch.OK;
@@ -229,6 +237,8 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
 ChassisErrorCode chassis_process(void) {
     /** @brief 通用循环索引 */
     uint8_t i;
+    /** @brief 本周期四个转向电机是否都有有效反馈 */
+    bool steer_feedback_ready = true;
 
     if(s_chassis.initialized == 0u) {
         return ch.NOT_INITIALIZED;
@@ -238,8 +248,19 @@ ChassisErrorCode chassis_process(void) {
         /** @brief 当前循环处理的舵轮模块映射 */
         const ChassisModuleMap* map = &s_module_map[i];
 
-        steer_motor.update_feedback(map->dm_id, NULL);
+        if(steer_motor.update_feedback(map->dm_id, NULL) != MOTOR_STATUS_OK) {
+            steer_feedback_ready = false;
+        }
         drive_motor.update_feedback(map->dji_id, NULL);
+    }
+
+    if(chassis_retry_enable_steer_motors(steer_feedback_ready) == false) {
+        chassis_stop_all_drive_motors();
+        s_chassis.kine.state.cur_vx = 0.0f;
+        s_chassis.kine.state.cur_vy = 0.0f;
+        s_chassis.kine.state.cur_wz = 0.0f;
+        s_chassis_view = s_chassis;
+        return ch.OK;
     }
 
     for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
@@ -407,6 +428,15 @@ const SteerWheelControl* chassis_get_control(void) {
 }
 
 /**
+ * @brief Check whether chassis cold-start is ready for normal control
+ * @return true All steer motors have valid feedback
+ * @return false Chassis is still waiting for steer motor feedback
+ */
+bool chassis_is_ready(void) {
+    return s_chassis.initialized != 0u && s_chassis.steer_ready != 0u;
+}
+
+/**
  * @brief 将底盘状态码转换为静态字符串
  * @param status 底盘状态码
  * @return const char* 状态码名称
@@ -470,6 +500,7 @@ static bool chassis_dji_can_send(uint32_t id, const uint8_t* data, uint8_t len) 
 }
 
 static ChassisErrorCode chassis_enable_steer_motors(void) {
+    bool all_ok = true;
     /** @brief 通用循环索引 */
     uint8_t i;
 
@@ -477,17 +508,64 @@ static ChassisErrorCode chassis_enable_steer_motors(void) {
         /** @brief 当前待初始化的转向电机 CAN ID */
         uint8_t dm_id = s_module_map[i].dm_id;
 
-        (void)dm_motor_clear_error(dm_id);
+        if(dm_motor_clear_error(dm_id) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
         delay_ms(100);
-        (void)steer_motor.enable(dm_id);
+        if(steer_motor.enable(dm_id) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
         delay_ms(100);
-        (void)steer_motor.switch_mode(dm_id, DM_MOTOR_MODE_POS_VEL);
-        (void)steer_motor.set_spd(dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S);
-        (void)steer_motor.set_tor(dm_id, 0.0f);
-        (void)steer_motor.brake(dm_id);
+        if(steer_motor.switch_mode(dm_id, DM_MOTOR_MODE_POS_VEL) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
+        if(steer_motor.set_spd(dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
+        if(steer_motor.set_tor(dm_id, 0.0f) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
+        if(steer_motor.brake(dm_id) != MOTOR_STATUS_OK) {
+            all_ok = false;
+            continue;
+        }
     }
 
-    return ch.OK;
+    return all_ok ? ch.OK : ch.INVALID_PARAM;
+}
+
+static void chassis_stop_all_drive_motors(void) {
+    /** @brief 通用循环索引 */
+    uint8_t i;
+
+    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
+        (void)drive_motor.stop(s_module_map[i].dji_id);
+    }
+}
+
+static bool chassis_retry_enable_steer_motors(bool steer_feedback_ready) {
+    if(steer_feedback_ready) {
+        s_steer_enable_retry_countdown = 0u;
+        s_chassis.steer_ready = 1u;
+        return true;
+    }
+
+    s_chassis.steer_ready = 0u;
+
+    if(s_steer_enable_retry_countdown > 0u) {
+        --s_steer_enable_retry_countdown;
+        return false;
+    }
+
+    (void)chassis_enable_steer_motors();
+    s_steer_enable_retry_countdown = CHASSIS_STEER_ENABLE_RETRY_CYCLES;
+
+    return false;
 }
 
 static float chassis_wheel_omega_to_drive_omega(float wheel_omega) {

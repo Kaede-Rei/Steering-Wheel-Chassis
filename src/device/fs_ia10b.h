@@ -28,6 +28,7 @@ typedef struct {
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
 void ibus_init(void);
+void ibus_maintain(void);
 bool ibus_get_data(FsIa10bData* out);
 bool ibus_get_debug(FsIa10bDebug* out);
 bool ibus_is_online(uint32_t timeout_ms);

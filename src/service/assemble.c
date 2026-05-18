@@ -57,7 +57,7 @@ static void chassis_control_callback(void);
 
 void assemble_init(void) {
     delay_ms_init(HAL_GetTick);
-    delay_ms(500);
+    delay_ms(2500);
 
     assemble_log();
     assemble_imu();
@@ -116,7 +116,7 @@ static void assemble_rgb_led(void) {
 
     assert(rgb_led.init(&rgb_config) == RGB_LED_STATUS_OK);
     spi_register_tx_complete_callback(&hspi6, rgb_led_write_complete_callback);
-    rgb_led.fill(0U, 255U, 0U);
+    rgb_led.fill(255U, 0U, 0U);
     rgb_led.show();
 }
 
