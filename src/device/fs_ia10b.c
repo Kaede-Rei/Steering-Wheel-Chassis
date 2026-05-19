@@ -88,6 +88,14 @@ static uint8_t s_frame_index = 0u;
 static uint32_t s_last_restart_ms = 0u;
 
 /**
+ * @brief UART5 ReceiveToIdle DMA 是否已经启动并在等待数据
+ *
+ * 离线并不代表 DMA 需要周期性 abort/restart；只要接收仍然挂着，
+ * 遥控器后续开机发出的第一帧就能触发回调。
+ */
+static volatile bool s_rx_active = false;
+
+/**
  * @brief 当前在线周期是否已经记录过日志
  *
  * 该标志用于日志限频；
@@ -119,6 +127,14 @@ static volatile FsIa10bDebug s_debug;
  */
 static volatile bool s_ibus_restart_pending = false;
 
+/**
+ * @brief 下一次重启接收前是否需要先 abort HAL 当前接收状态
+ *
+ * 普通 IDLE/TC 接收事件里 HAL 已经结束本次 DMA；只有错误回调后才需要
+ * 在主循环里补一次 abort，避免在中断里重入 HAL 接收启动流程。
+ */
+static volatile bool s_abort_before_restart = false;
+
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 /**
@@ -135,7 +151,7 @@ static void ibus_rx_event_callback(uint16_t size);
  * @brief 处理 UART5 错误回调
  *
  * 出错后会清空当前帧同步状态；
- * 然后重新启动 DMA 接收以等待下一帧
+ * 然后标记主循环重新启动 DMA 接收以等待下一帧
  */
 static void ibus_error_callback(void);
 
@@ -214,6 +230,10 @@ void ibus_init(void) {
 
     s_frame_index = 0u;
     s_last_restart_ms = 0u;
+    s_rx_active = false;
+    s_online_logged = false;
+    s_ibus_restart_pending = false;
+    s_abort_before_restart = false;
 
     uart_register_rx_event_callback(&huart5, ibus_rx_event_callback);
     uart_register_error_callback(&huart5, ibus_error_callback);
@@ -230,11 +250,13 @@ void ibus_maintain(void) {
             log_info("IBUS online frame_count=%lu", (unsigned long)s_data.frame_count);
             s_online_logged = true;
         }
-        return;
+    }
+    else if(s_online_logged) {
+        s_online_logged = false;
     }
 
-    if(s_online_logged) {
-        s_online_logged = false;
+    if(s_rx_active && !s_ibus_restart_pending) {
+        return;
     }
 
     if(!s_ibus_restart_pending && (now - s_last_restart_ms) < IBUS_RX_RESTART_INTERVAL_MS) {
@@ -243,11 +265,13 @@ void ibus_maintain(void) {
 
     s_ibus_restart_pending = false;
     s_frame_index = 0u;
-
-    (void)uart_abort_receive_dma(&huart5);
+    if(s_abort_before_restart) {
+        s_abort_before_restart = false;
+        (void)uart_abort_receive_dma(&huart5);
+    }
 
     if(!ibus_restart_receive()) {
-        s_ibus_restart_pending = true;
+        s_ibus_restart_pending = false;
     }
 }
 
@@ -319,6 +343,8 @@ uint16_t ibus_get_channel(uint8_t index) {
 static void ibus_rx_event_callback(uint16_t size) {
     uint16_t i;
 
+    s_rx_active = false;
+
     if(size > IBUS_DMA_RX_BUF_LEN) {
         size = IBUS_DMA_RX_BUF_LEN;
     }
@@ -329,12 +355,14 @@ static void ibus_rx_event_callback(uint16_t size) {
         ibus_feed_byte(s_dma_rx_buf[i]);
     }
 
-    ibus_restart_receive();
+    s_ibus_restart_pending = true;
 }
 
 static void ibus_error_callback(void) {
+    s_rx_active = false;
     s_frame_index = 0u;
     s_data.error_count++;
+    s_abort_before_restart = true;
     s_ibus_restart_pending = true;
 }
 
@@ -342,7 +370,8 @@ static bool ibus_restart_receive(void) {
     memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
     ibus_invalidate_dma_buffer(IBUS_DMA_RX_BUF_LEN);
     s_last_restart_ms = HAL_GetTick();
-    return uart_receive_to_idle_dma(&huart5, s_dma_rx_buf, IBUS_DMA_RX_BUF_LEN);
+    s_rx_active = uart_receive_to_idle_dma(&huart5, s_dma_rx_buf, IBUS_DMA_RX_BUF_LEN);
+    return s_rx_active;
 }
 
 static void ibus_invalidate_dma_buffer(uint16_t size) {
