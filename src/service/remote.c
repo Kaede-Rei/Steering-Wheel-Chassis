@@ -198,6 +198,13 @@ void remote_process(void) {
         return;
     }
 
+    if(rc_data.channel[REMOTE_CH_SWD] == REMOTE_SW_LOW) {
+        (void)chassis.set_steer_then_drive_enabled(false);
+    }
+    else {
+        (void)chassis.set_steer_then_drive_enabled(true);
+    }
+
     if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_LOW || rc_data.channel[REMOTE_CH_VRA] <= REMOTE_VR_LOW_THRESHOLD) {
         s_command.vx = 0.0f;
         s_command.vy = 0.0f;

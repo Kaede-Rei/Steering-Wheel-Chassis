@@ -33,14 +33,14 @@
  * 单位为 rad/s；
  * 该值越大转向越快，但也更容易引入抖动
  */
-#define CHASSIS_STEER_TRACK_SPEED_RAD_S   9.42f
+#define CHASSIS_STEER_TRACK_MAX_SPEED_RAD_S   9.42f
 /**
  * @brief 转向电机 S 曲线规划使用的最低跟踪速度
  *
  * 单位为 rad/s；
  * 用于避免速度过低导致转向响应迟滞
  */
-#define CHASSIS_STEER_MIN_SPEED_RAD_S     4.71f
+#define CHASSIS_STEER_TRACK_MIN_SPEED_RAD_S     4.71f
 /**
  * @brief 转向跟踪速度从最低值爬升到最高值的时间
  *
@@ -241,6 +241,7 @@ const struct ChassisInterface chassis_interface = {
     .init = chassis_init,
     .init_with_config = chassis_init_with_config,
     .set_velocity = chassis_set_velocity,
+    .set_steer_then_drive_enabled = chassis_set_steer_then_drive_enabled,
     .process = chassis_process,
     .stop = chassis_stop,
     .brake = chassis_brake,
@@ -581,6 +582,7 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     s_chassis.config = *config;
     s_chassis.brake_requested = 0u;
     s_chassis.brake_latched = 0u;
+    s_chassis.steer_then_drive_enabled = 1u;
     s_chassis.initialized = 0u;
     chassis_reset_steer_speed_profiles();
     s_steer_enable_retry_countdown = 0u;
@@ -638,6 +640,20 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
     chassis_external_to_internal_twist(vx, vy, wz,
         &s_chassis.kine.control.vx, &s_chassis.kine.control.vy, &s_chassis.kine.control.wz);
 
+    return ch.OK;
+}
+
+/**
+ * @brief 设置是否启用先转向到位再驱动模式
+ * @param enabled true 启用，false 关闭
+ * @return ChassisErrorCode 状态码
+ */
+ChassisErrorCode chassis_set_steer_then_drive_enabled(bool enabled) {
+    if(s_chassis.initialized == 0u) {
+        return ch.NOT_INITIALIZED;
+    }
+
+    s_chassis.steer_then_drive_enabled = enabled ? 1u : 0u;
     return ch.OK;
 }
 
@@ -729,7 +745,7 @@ ChassisErrorCode chassis_process(void) {
             chassis_optimize_drive_module_target(map->module);
         }
 
-        drive_ready = chassis_drive_targets_reached();
+        drive_ready = (s_chassis.steer_then_drive_enabled == 0u) || chassis_drive_targets_reached();
 
         for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
             const ChassisModuleMap* map = &s_module_map[i];
@@ -927,7 +943,7 @@ static ChassisErrorCode chassis_enable_steer_motors(void) {
             all_ok = false;
             continue;
         }
-        if(steer_motor.set_spd(dm_id, CHASSIS_STEER_TRACK_SPEED_RAD_S) != MOTOR_STATUS_OK) {
+        if(steer_motor.set_spd(dm_id, CHASSIS_STEER_TRACK_MAX_SPEED_RAD_S) != MOTOR_STATUS_OK) {
             log_warn("CHASSIS steer dm_id=%u set_spd failed", dm_id);
             all_ok = false;
             continue;
@@ -1167,7 +1183,7 @@ static float chassis_calc_steer_track_speed(ChassisModule module, float target_a
     float speed_ratio;
 
     if(module >= CHASSIS_MODULE_COUNT) {
-        return CHASSIS_STEER_TRACK_SPEED_RAD_S;
+        return CHASSIS_STEER_TRACK_MAX_SPEED_RAD_S;
     }
 
     current_angle = s_chassis.kine.state.cur_wheels[module].steer_angle;
@@ -1177,7 +1193,7 @@ static float chassis_calc_steer_track_speed(ChassisModule module, float target_a
         s_steer_speed_ramp_time[module] = 0.0f;
         s_steer_speed_last_target[module] = target_angle;
         s_steer_speed_initialized[module] = 1u;
-        return CHASSIS_STEER_MIN_SPEED_RAD_S;
+        return CHASSIS_STEER_TRACK_MIN_SPEED_RAD_S;
     }
 
     target_delta = chassis_wrap_pi(target_angle - s_steer_speed_last_target[module]);
@@ -1195,8 +1211,8 @@ static float chassis_calc_steer_track_speed(ChassisModule module, float target_a
         speed_ratio = slowdown_ratio;
     }
 
-    return CHASSIS_STEER_MIN_SPEED_RAD_S
-        + (CHASSIS_STEER_TRACK_SPEED_RAD_S - CHASSIS_STEER_MIN_SPEED_RAD_S) * speed_ratio;
+    return CHASSIS_STEER_TRACK_MIN_SPEED_RAD_S
+        + (CHASSIS_STEER_TRACK_MAX_SPEED_RAD_S - CHASSIS_STEER_TRACK_MIN_SPEED_RAD_S) * speed_ratio;
 }
 
 static bool chassis_drive_targets_reached(void) {

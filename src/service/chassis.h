@@ -92,6 +92,13 @@ typedef struct {
     uint8_t brake_requested;
     uint8_t brake_latched;
     /**
+     * @brief 是否等待转向到位后再输出驱动速度
+     *
+     * 置位时保留原有“先转向再驱动”保护逻辑；
+     * 清零时转向与驱动命令会同步下发。
+     */
+    uint8_t steer_then_drive_enabled;
+    /**
      * @brief 转向电机反馈就绪标志
      *
      * 四个转向电机均收到有效反馈后置位；
@@ -128,6 +135,12 @@ extern const struct ChassisInterface {
      * @return ChassisErrorCode 状态码
      */
     ChassisErrorCode(*set_velocity)(float vx, float vy, float wz);
+    /**
+     * @brief 设置是否启用先转向到位再驱动模式
+     * @param enabled true 启用，false 关闭
+     * @return ChassisErrorCode 状态码
+     */
+    ChassisErrorCode(*set_steer_then_drive_enabled)(bool enabled);
     /**
      * @brief 执行一次底盘控制流程
      *
@@ -209,6 +222,13 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config);
  * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz);
+
+/**
+ * @brief 设置是否启用先转向到位再驱动模式
+ * @param enabled true 启用，false 关闭
+ * @return ChassisErrorCode 状态码
+ */
+ChassisErrorCode chassis_set_steer_then_drive_enabled(bool enabled);
 
 /**
  * @brief 执行一次底盘控制流程
