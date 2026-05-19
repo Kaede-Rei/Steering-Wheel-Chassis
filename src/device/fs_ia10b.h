@@ -56,7 +56,7 @@ typedef struct {
  * @brief 初始化 FS-iA10B i.BUS 接收驱动
  *
  * UART5 的波特率、反相等硬件参数由 CubeMX/.ioc 配置；
- * 本函数只注册回调并启动空闲行 DMA 接收
+ * 本函数只注册回调；空闲行 DMA 接收由 ibus_maintain() 在主循环中启动
  */
 void ibus_init(void);
 

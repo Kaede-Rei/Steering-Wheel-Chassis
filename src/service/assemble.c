@@ -78,7 +78,7 @@ static const LogPortOps log_ops = {
  * TIM6 中断只置位该标志；
  * 主循环看到标志后再执行完整底盘控制流程
  */
-bool tim6_500hz_flag = false;
+volatile bool tim6_500hz_flag = false;
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 

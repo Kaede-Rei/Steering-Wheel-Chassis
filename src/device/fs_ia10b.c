@@ -89,9 +89,6 @@ static uint32_t s_last_restart_ms = 0u;
 
 /**
  * @brief UART5 ReceiveToIdle DMA 是否已经启动并在等待数据
- *
- * 离线并不代表 DMA 需要周期性 abort/restart；只要接收仍然挂着，
- * 遥控器后续开机发出的第一帧就能触发回调。
  */
 static volatile bool s_rx_active = false;
 
@@ -129,9 +126,6 @@ static volatile bool s_ibus_restart_pending = false;
 
 /**
  * @brief 下一次重启接收前是否需要先 abort HAL 当前接收状态
- *
- * 普通 IDLE/TC 接收事件里 HAL 已经结束本次 DMA；只有错误回调后才需要
- * 在主循环里补一次 abort，避免在中断里重入 HAL 接收启动流程。
  */
 static volatile bool s_abort_before_restart = false;
 
@@ -232,14 +226,11 @@ void ibus_init(void) {
     s_last_restart_ms = 0u;
     s_rx_active = false;
     s_online_logged = false;
-    s_ibus_restart_pending = false;
+    s_ibus_restart_pending = true;
     s_abort_before_restart = false;
 
     uart_register_rx_event_callback(&huart5, ibus_rx_event_callback);
     uart_register_error_callback(&huart5, ibus_error_callback);
-    if(!ibus_restart_receive()) {
-        log_error("IBUS init failed");
-    }
 }
 
 void ibus_maintain(void) {

@@ -171,7 +171,7 @@ static RemoteSpeedLimit remote_get_speed_limit(uint16_t swb);
  * @brief 初始化遥控服务内部状态
  *
  * 该函数只清空最近命令；
- * i.BUS 接收驱动由 assemble_remote() 单独初始化
+ * i.BUS 接收驱动由 assemble_remote() 注册，实际接收由 remote_process() 维护
  */
 void remote_init(void) {
     memset(&s_command, 0, sizeof(s_command));
