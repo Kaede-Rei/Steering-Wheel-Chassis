@@ -56,14 +56,6 @@
 #define IBUS_RX_RESTART_INTERVAL_MS 200u
 
 /**
- * @brief UART5 完整重新初始化的最小间隔
- *
- * 如果单纯重启 DMA 仍无法恢复接收；
- * 会按该间隔重新配置 UART5 反相接收
- */
-#define IBUS_UART_REINIT_INTERVAL_MS 1000u
-
-/**
  * @brief UART5 i.BUS 字节流的 DMA 接收缓存
  *
  * 缓存按 32 字节对齐；
@@ -94,14 +86,6 @@ static uint8_t s_frame_index = 0u;
  * 用于限制冷启动恢复动作的频率
  */
 static uint32_t s_last_restart_ms = 0u;
-
-/**
- * @brief 上一次完整重初始化 UART5 的系统时间戳
- *
- * 单位为 HAL_GetTick() 的毫秒计数；
- * 用于避免频繁 DeInit/Init UART 外设
- */
-static uint32_t s_last_uart_reinit_ms = 0u;
 
 /**
  * @brief 当前在线周期是否已经记录过日志
@@ -169,17 +153,6 @@ static bool ibus_restart_receive(void);
 static void ibus_invalidate_dma_buffer(uint16_t size);
 
 /**
- * @brief 使用 i.BUS 所需的反相接收配置重初始化 UART5
- *
- * 冷启动时接收机可能比主控慢稳定；
- * 重新初始化可以从 UART 错误或半帧状态中恢复
- *
- * @return true UART5 配置成功并已启动接收
- * @return false UART5 配置或接收启动失败
- */
-static bool ibus_uart_init_inverted(void);
-
-/**
  * @brief 向 i.BUS 帧解析器输入一个字节
  *
  * 解析器会自动寻找帧头并累计完整帧；
@@ -226,7 +199,6 @@ static void ibus_parse_frame(const uint8_t frame[FS_IA10B_IBUS_FRAME_LEN]);
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 void ibus_init(void) {
-    log_info("IBUS init begin");
     memset((void*)&s_data, 0, sizeof(s_data));
     memset((void*)&s_debug, 0, sizeof(s_debug));
     memset(s_frame, 0, sizeof(s_frame));
@@ -234,14 +206,10 @@ void ibus_init(void) {
 
     s_frame_index = 0u;
     s_last_restart_ms = 0u;
-    s_last_uart_reinit_ms = 0u;
 
     uart_register_rx_event_callback(&huart5, ibus_rx_event_callback);
     uart_register_error_callback(&huart5, ibus_error_callback);
-    if(ibus_uart_init_inverted()) {
-        log_info("IBUS init done");
-    }
-    else {
+    if(!ibus_restart_receive()) {
         log_error("IBUS init failed");
     }
 }
@@ -267,14 +235,8 @@ void ibus_maintain(void) {
 
     s_frame_index = 0u;
 
-    if((now - s_last_uart_reinit_ms) >= IBUS_UART_REINIT_INTERVAL_MS) {
-        s_last_uart_reinit_ms = now;
-        (void)ibus_uart_init_inverted();
-    }
-    else {
-        (void)uart_abort_receive_dma(&huart5);
-        (void)ibus_restart_receive();
-    }
+    (void)uart_abort_receive_dma(&huart5);
+    (void)ibus_restart_receive();
 }
 
 bool ibus_get_data(FsIa10bData* out) {
@@ -382,50 +344,6 @@ static void ibus_invalidate_dma_buffer(uint16_t size) {
     }
 
     SCB_InvalidateDCache_by_Addr((uint32_t*)start, (int32_t)(end - start));
-}
-
-static bool ibus_uart_init_inverted(void) {
-    (void)uart_abort_receive_dma(&huart5);
-    (void)HAL_UART_DeInit(&huart5);
-
-    /*
-     * 当前硬件接线需要开启 UART RX 反相；
-     * 这样 FS-iA10B 的 i.BUS 帧才能按 115200 8N1 正常解析
-     */
-    huart5.Init.BaudRate = 115200;
-    huart5.Init.WordLength = UART_WORDLENGTH_8B;
-    huart5.Init.StopBits = UART_STOPBITS_1;
-    huart5.Init.Parity = UART_PARITY_NONE;
-    huart5.Init.Mode = UART_MODE_TX_RX;
-    huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart5.Init.OverSampling = UART_OVERSAMPLING_16;
-    huart5.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-    huart5.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-    huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_RXINVERT_INIT;
-    huart5.AdvancedInit.RxPinLevelInvert = UART_ADVFEATURE_RXINV_ENABLE;
-
-    if(HAL_UART_Init(&huart5) != HAL_OK) {
-        return false;
-    }
-
-    if(HAL_UARTEx_SetTxFifoThreshold(&huart5, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK) {
-        return false;
-    }
-
-    if(HAL_UARTEx_SetRxFifoThreshold(&huart5, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK) {
-        return false;
-    }
-
-    if(HAL_UARTEx_DisableFifoMode(&huart5) != HAL_OK) {
-        return false;
-    }
-
-    memset(s_frame, 0, sizeof(s_frame));
-    memset(s_dma_rx_buf, 0, sizeof(s_dma_rx_buf));
-    memset((void*)&s_debug, 0, sizeof(s_debug));
-    s_frame_index = 0u;
-    ibus_restart_receive();
-    return true;
 }
 
 static void ibus_feed_byte(uint8_t byte) {

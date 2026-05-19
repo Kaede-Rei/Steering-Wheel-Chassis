@@ -34,7 +34,7 @@
  * 接收机、电机和电源轨在刚上电时需要先稳定一段时间；
  * 该延时集中放在装配初始化入口，避免各模块里散落过多等待
  */
-#define ASSEMBLE_BOOT_SETTLE_DELAY_MS 2500u
+#define ASSEMBLE_BOOT_SETTLE_DELAY_MS 1500u
 
 /**
  * @brief WS2812 RGB 灯的颜色缓存
@@ -151,16 +151,28 @@ void assemble_init(void) {
 
     assemble_log();
     log_info("BOOT log ready");
+    delay_ms(100);
+
     assemble_rgb_led();
     log_info("BOOT rgb init step done");
+    delay_ms(100);
+
     assemble_imu();
     log_info("BOOT imu init step done");
+    delay_ms(100);
+
     assemble_chassis();
     log_info("BOOT chassis init step done");
+    delay_ms(100);
+
     assemble_remote();
     log_info("BOOT remote init step done");
+    delay_ms(100);
+
     assemble_tim6_500hz();
     log_info("BOOT tim6 500hz init step done");
+    delay_ms(100);
+
 }
 
 static void assemble_log(void) {

@@ -95,7 +95,7 @@ typedef struct {
      * @brief 是否等待转向到位后再输出驱动速度
      *
      * 置位时保留原有“先转向再驱动”保护逻辑；
-     * 清零时转向与驱动命令会同步下发。
+     * 清零时转向与驱动命令会同步下发
      */
     uint8_t steer_then_drive_enabled;
     /**

@@ -613,7 +613,6 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
         return ch.KINEMATICS_FAILED;
     }
 
-    log_info("CHASSIS sending initial steer enable sequence");
     if(chassis_enable_steer_motors() != ch.OK) {
         log_warn("CHASSIS initial steer enable incomplete, will retry in process");
     }
@@ -960,11 +959,10 @@ static ChassisErrorCode chassis_enable_steer_motors(void) {
         }
 
         log_info("CHASSIS steer dm_id=%u enable sequence ok", dm_id);
+        delay_ms(100);
     }
 
-    if(all_ok) {
-        log_info("CHASSIS steer enable sequence all ok");
-    }
+    delay_ms(100);
 
     return all_ok ? ch.OK : ch.INVALID_PARAM;
 }
