@@ -5,7 +5,7 @@
 #include "stm32_hal_uart.h"
 #include "log.h"
 
-// ! ========================= 鍙?閲?澹?鏄?========================= ! //
+// ! ========================= 变 量 声 明 ========================= ! //
 
 /**
  * @brief i.BUS 帧头第一个字节
@@ -127,7 +127,7 @@ static volatile FsIa10bData s_data;
  */
 static volatile FsIa10bDebug s_debug;
 
-// ! ========================= 绉?鏈?鍑?鏁?澹?鏄?========================= ! //
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 /**
  * @brief 处理 UART 空闲行接收事件
@@ -223,7 +223,7 @@ static bool ibus_channels_in_range(const uint8_t frame[FS_IA10B_IBUS_FRAME_LEN])
  */
 static void ibus_parse_frame(const uint8_t frame[FS_IA10B_IBUS_FRAME_LEN]);
 
-// ! ========================= 鎺?鍙?鍑?鏁?瀹?鐜?========================= ! //
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 void ibus_init(void) {
     log_info("IBUS init begin");
@@ -340,7 +340,7 @@ uint16_t ibus_get_channel(uint8_t index) {
     return value;
 }
 
-// ! ========================= 绉?鏈?鍑?鏁?瀹?鐜?========================= ! //
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 static void ibus_rx_event_callback(uint16_t size) {
     uint16_t i;

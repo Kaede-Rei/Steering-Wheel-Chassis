@@ -10,7 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// ! ========================= 鍙?閲?澹?鏄?========================= ! //
+// ! ========================= 变 量 声 明 ========================= ! //
 
 /**
  * @brief 底盘接口单例的文件内短别名
@@ -33,14 +33,14 @@
  * 单位为 rad/s；
  * 该值越大转向越快，但也更容易引入抖动
  */
-#define CHASSIS_STEER_TRACK_SPEED_RAD_S   11.5f
+#define CHASSIS_STEER_TRACK_SPEED_RAD_S   9.42f
 /**
  * @brief 转向电机 S 曲线规划使用的最低跟踪速度
  *
  * 单位为 rad/s；
  * 用于避免速度过低导致转向响应迟滞
  */
-#define CHASSIS_STEER_MIN_SPEED_RAD_S     5.5f
+#define CHASSIS_STEER_MIN_SPEED_RAD_S     4.71f
 /**
  * @brief 转向跟踪速度从最低值爬升到最高值的时间
  *
@@ -133,10 +133,10 @@
  * drive_sign 用于修正驱动电机安装方向
  */
 typedef struct {
-    ChassisModule module; /**< 鑸佃疆妯″潡閫昏緫缂栧彿 */
-    uint8_t dm_id;        /**< 杞悜杈惧鐢垫満 CAN ID */
-    uint8_t dji_id;       /**< 椹卞姩澶х枂鐢垫満 CAN ID */
-    int8_t drive_sign;    /**< 椹卞姩鐢垫満瀹夎鏂瑰悜淇绗﹀彿锛屽彇鍊间负 1 鎴?-1 */
+    ChassisModule module; /**< 舵轮模块逻辑编号 */
+    uint8_t dm_id;        /**< 转向达妙电机 CAN ID */
+    uint8_t dji_id;       /**< 驱动大疆电机 CAN ID */
+    int8_t drive_sign;    /**< 驱动电机安装方向修正符号，取值为 1 或 -1 */
 } ChassisModuleMap;
 
 /**
@@ -252,7 +252,7 @@ const struct ChassisInterface chassis_interface = {
 };
 #undef X
 
-// ! ========================= 绉?鏈?鍑?鏁?澹?鏄?========================= ! //
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 /**
  * @brief 将车轮角速度转换为驱动电机角速度
@@ -533,11 +533,11 @@ static void chassis_set_brake_targets(void);
 static bool chassis_brake_targets_reached(void);
 bool chassis_is_ready(void);
 
-// ! ========================= 鎺?鍙?鍑?鏁?瀹?鐜?========================= ! //
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 /**
- * @brief 浣跨敤榛樿閰嶇疆鍒濆鍖栧簳鐩?
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 使用默认配置初始化底盘
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_init(void) {
     ChassisConfig config = chassis_default_config();
@@ -545,9 +545,9 @@ ChassisErrorCode chassis_init(void) {
 }
 
 /**
- * @brief 浣跨敤鎸囧畾閰嶇疆鍒濆鍖栧簳鐩?
- * @param config 搴曠洏閰嶇疆
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 使用指定配置初始化底盘
+ * @param config 底盘配置
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
     static const BusMotorPortOps steer_ops = {
@@ -622,11 +622,11 @@ ChassisErrorCode chassis_init_with_config(const ChassisConfig* config) {
 }
 
 /**
- * @brief 璁剧疆搴曠洏鐩爣閫熷害
- * @param vx 搴曠洏 x 鏂瑰悜鐩爣绾块€熷害锛屽崟浣?m/s
- * @param vy 搴曠洏 y 鏂瑰悜鐩爣绾块€熷害锛屽崟浣?m/s
- * @param wz 搴曠洏 z 杞寸洰鏍囪閫熷害锛屽崟浣?rad/s
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 设置底盘目标速度
+ * @param vx 底盘 x 方向目标线速度，单位 m/s
+ * @param vy 底盘 y 方向目标线速度，单位 m/s
+ * @param wz 底盘 z 轴目标角速度，单位 rad/s
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
     if(s_chassis.initialized == 0u) {
@@ -642,8 +642,8 @@ ChassisErrorCode chassis_set_velocity(float vx, float vy, float wz) {
 }
 
 /**
- * @brief 鎵ц涓€娆″簳鐩樻帶鍒舵祦绋?
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 执行一次底盘控制流程
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_process(void) {
     uint8_t i;
@@ -754,8 +754,8 @@ ChassisErrorCode chassis_process(void) {
 }
 
 /**
- * @brief 鍋滄搴曠洏杩愬姩
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 停止底盘运动
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_stop(void) {
     uint8_t i;
@@ -780,8 +780,8 @@ ChassisErrorCode chassis_stop(void) {
 }
 
 /**
- * @brief 璇锋眰搴曠洏杩涘叆椹昏溅鍒硅溅鐘舵€?
- * @return ChassisErrorCode 鐘舵€佺爜
+ * @brief 请求底盘进入驻车刹车状态
+ * @return ChassisErrorCode 状态码
  */
 ChassisErrorCode chassis_brake(void) {
     if(s_chassis.initialized == 0u) {
@@ -801,24 +801,24 @@ ChassisErrorCode chassis_brake(void) {
 }
 
 /**
- * @brief 鑾峰彇搴曠洏瀹炰緥鍙瑙嗗浘
- * @return const Chassis* 搴曠洏瀹炰緥鎸囬拡
+ * @brief 获取底盘实例只读视图
+ * @return const Chassis* 底盘实例指针
  */
 const Chassis* chassis_get_chassis(void) {
     return &s_chassis_view;
 }
 
 /**
- * @brief 鑾峰彇搴曠洏褰撳墠鐘舵€佸彧璇昏鍥?
- * @return const SteerWheelState* 褰撳墠鐘舵€佹寚閽?
+ * @brief 获取底盘当前状态只读视图
+ * @return const SteerWheelState* 当前状态指针
  */
 const SteerWheelState* chassis_get_state(void) {
     return &s_chassis_view.kine.state;
 }
 
 /**
- * @brief 鑾峰彇搴曠洏褰撳墠鎺у埗閲忓彧璇昏鍥?
- * @return const SteerWheelControl* 褰撳墠鎺у埗閲忔寚閽?
+ * @brief 获取底盘当前控制量只读视图
+ * @return const SteerWheelControl* 当前控制量指针
  */
 const SteerWheelControl* chassis_get_control(void) {
     return &s_chassis_view.kine.control;
@@ -837,9 +837,9 @@ bool chassis_is_ready(void) {
 }
 
 /**
- * @brief 灏嗗簳鐩樼姸鎬佺爜杞崲涓洪潤鎬佸瓧绗︿覆
- * @param status 搴曠洏鐘舵€佺爜
- * @return const char* 鐘舵€佺爜鍚嶇О
+ * @brief 将底盘状态码转换为静态字符串
+ * @param status 底盘状态码
+ * @return const char* 状态码名称
  */
 /**
  * @brief 展开底盘状态表为 switch 分支
@@ -856,7 +856,7 @@ const char* chassis_error_code_to_str(ChassisErrorCode status) {
 }
 #undef X
 
-// ! ========================= 绉?鏈?鍑?鏁?瀹?鐜?========================= ! //
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 static ChassisConfig chassis_default_config(void) {
     ChassisConfig config = {
