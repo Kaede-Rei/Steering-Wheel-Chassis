@@ -111,6 +111,14 @@ static volatile FsIa10bData s_data;
  */
 static volatile FsIa10bDebug s_debug;
 
+/**
+ * @brief 是否有待处理的接收错误需要重启 DMA
+ *
+ * 该标志在 UART 错误回调中置位；
+ * 主循环看到后会执行重启流程
+ */
+static volatile bool s_ibus_restart_pending = false;
+
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 /**
@@ -229,14 +237,18 @@ void ibus_maintain(void) {
         s_online_logged = false;
     }
 
-    if((now - s_last_restart_ms) < IBUS_RX_RESTART_INTERVAL_MS) {
+    if(!s_ibus_restart_pending && (now - s_last_restart_ms) < IBUS_RX_RESTART_INTERVAL_MS) {
         return;
     }
 
+    s_ibus_restart_pending = false;
     s_frame_index = 0u;
 
     (void)uart_abort_receive_dma(&huart5);
-    (void)ibus_restart_receive();
+
+    if(!ibus_restart_receive()) {
+        s_ibus_restart_pending = true;
+    }
 }
 
 bool ibus_get_data(FsIa10bData* out) {
@@ -323,9 +335,7 @@ static void ibus_rx_event_callback(uint16_t size) {
 static void ibus_error_callback(void) {
     s_frame_index = 0u;
     s_data.error_count++;
-
-    (void)uart_abort_receive_dma(&huart5);
-    ibus_restart_receive();
+    s_ibus_restart_pending = true;
 }
 
 static bool ibus_restart_receive(void) {
