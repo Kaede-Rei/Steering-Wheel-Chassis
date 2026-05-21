@@ -323,7 +323,8 @@ static void assemble_chassis(void) {
             .wheel_radius = 0.057965f,
             .max_wheel_linear_speed = 2.0f
         },
-        .wheel_drive_ratio = 1.0f
+        .wheel_drive_ratio = 1.0f,
+        .steer_target_mode = CHASSIS_STEER_TARGET_WRAP_PI
     };
 
     log_info("CHASSIS assemble begin");

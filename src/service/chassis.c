@@ -135,12 +135,17 @@
  *
  * 每个模块包含一个转向电机和一个驱动电机；
  * drive_sign 用于修正驱动电机安装方向
+ *
+ * @param module 舵轮模块枚举
+ * @param steer_id 转向电机 CAN ID
+ * @param drive_id 驱动电机 CAN ID
+ * @param drive_sign 驱动电机安装方向修正符号，取值为 1 或 -1
  */
 typedef struct {
-    ChassisModule module; /**< 舵轮模块逻辑编号 */
-    uint8_t steer_id;     /**< 转向电机 CAN ID */
-    uint8_t drive_id;     /**< 驱动电机 CAN ID */
-    int8_t drive_sign;    /**< 驱动电机安装方向修正符号，取值为 1 或 -1 */
+    ChassisModule module;
+    uint8_t steer_id;
+    uint8_t drive_id;
+    int8_t drive_sign;
 } ChassisModuleMap;
 
 /**
@@ -868,6 +873,10 @@ static ChassisErrorCode chassis_check_config(const ChassisConfig* config) {
         || config->wheel_drive_ratio <= 0.0f) {
         return ch.INVALID_MODEL;
     }
+    if(config->steer_target_mode != CHASSIS_STEER_TARGET_ABS_NEAREST
+        && config->steer_target_mode != CHASSIS_STEER_TARGET_WRAP_PI) {
+        return ch.INVALID_PARAM;
+    }
 
     return ch.OK;
 }
@@ -1013,6 +1022,11 @@ static float chassis_select_nearest_heading_angle(float current_angle, float tar
     float nearest_target;
 
     target_angle = chassis_wrap_pi(target_angle);
+
+    if(s_chassis.config.steer_target_mode == CHASSIS_STEER_TARGET_WRAP_PI) {
+        return target_angle;
+    }
+
     nearest_target = current_angle + chassis_wrap_pi(target_angle - current_angle);
 
     while(nearest_target > CHASSIS_STEER_POS_LIMIT_RAD) {
