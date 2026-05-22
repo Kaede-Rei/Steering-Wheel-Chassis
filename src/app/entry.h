@@ -100,7 +100,8 @@ static inline void entry_loop(void) {
     }
 
     if(delay_nb_ms(&log_task, 2000)) {
-        log_info("Heartbeat");
+        // log_info("Heartbeat");
+        log_vofa(accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, angle.roll, angle.pitch, angle.yaw);
     }
 }
 

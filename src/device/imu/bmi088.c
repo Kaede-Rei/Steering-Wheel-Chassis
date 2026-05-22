@@ -6,8 +6,6 @@
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
-#define BMI088_USING_SPI_UNIT               hspi2
-
 #define BMI088_TEMP_FACTOR                  0.125f
 #define BMI088_TEMP_OFFSET                  23.0f
 
@@ -79,7 +77,7 @@ typedef enum {
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
-static ImuStatus bmi088_init(void);
+static ImuStatus bmi088_init(const void* config);
 static ImuStatus bmi088_update(void);
 static ImuStatus bmi088_blocking_update(void);
 static ImuAcc bmi088_get_acc(void);
@@ -96,8 +94,10 @@ static void bmi088_accel_cs_high(void);
 static void bmi088_gyro_cs_low(void);
 static void bmi088_gyro_cs_high(void);
 static uint8_t bmi088_read_write_byte(uint8_t tx_data);
-static SPI_HandleTypeDef* bmi088_get_spi_handle(void);
-static HAL_StatusTypeDef bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len);
+static void* bmi088_get_spi_handle(void);
+static bool bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len);
+static uint32_t bmi088_now_ms(void);
+static bool bmi088_config_is_valid(const Bmi088Config* config);
 
 static Bmi088Error bmi088_device_init(void);
 static Bmi088Error bmi088_accel_init(void);
@@ -111,8 +111,8 @@ static void bmi088_notify_accel_data_ready(void);
 static bool bmi088_async_poll(void);
 static bool bmi088_async_get_gyro(float gyro[3]);
 static bool bmi088_async_get_accel(float accel[3]);
-static void bmi088_spi_txrx_complete(SPI_HandleTypeDef* hspi);
-static void bmi088_spi_error(SPI_HandleTypeDef* hspi);
+static void bmi088_spi_txrx_complete(void* spi_handle);
+static void bmi088_spi_error(void* spi_handle);
 
 static void bmi088_write_single_reg(uint8_t reg, uint8_t data);
 static void bmi088_read_single_reg(uint8_t reg, uint8_t* return_data);
@@ -139,10 +139,11 @@ static float bmi088_wrap_pi(float angle);
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
-extern SPI_HandleTypeDef BMI088_USING_SPI_UNIT;
-
+static const Bmi088PortOps* s_bmi088_ops = 0;
 static float s_bmi088_accel_sen = BMI088_ACCEL_3G_SEN;
 static float s_bmi088_gyro_sen = BMI088_GYRO_2000_SEN;
+static uint16_t s_bmi088_accel_int_pin = 0U;
+static uint16_t s_bmi088_gyro_int_pin = 0U;
 
 static volatile Bmi088DmaState s_bmi088_dma_state = BMI088_DMA_IDLE;
 static volatile uint8_t s_bmi088_gyro_pending = 0U;
@@ -209,6 +210,19 @@ const ImuInterface bmi088_blocking_instance = {
     .status_str = bmi088_status_str,
 };
 
+ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops) {
+    if(config == 0 || ops == 0) {
+        return IMU_STATUS_INVALID_PARAM;
+    }
+
+    config->ops = ops;
+    config->accel_sen = BMI088_ACCEL_3G_SEN;
+    config->gyro_sen = BMI088_GYRO_2000_SEN;
+    config->accel_int_pin = 0U;
+    config->gyro_int_pin = 0U;
+    return IMU_STATUS_OK;
+}
+
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 /**
@@ -260,10 +274,10 @@ float bmi088_get_temp(void) {
  * @brief BMI088 EXTI 回调转发
  */
 void bmi088_exti_callback(uint16_t gpio_pin) {
-    if(gpio_pin == GYRO_INT_Pin) {
+    if(gpio_pin == s_bmi088_gyro_int_pin) {
         bmi088_notify_gyro_data_ready();
     }
-    else if(gpio_pin == ACC_INT_Pin) {
+    else if(gpio_pin == s_bmi088_accel_int_pin) {
         bmi088_notify_accel_data_ready();
     }
 }
@@ -271,15 +285,15 @@ void bmi088_exti_callback(uint16_t gpio_pin) {
 /**
  * @brief BMI088 SPI DMA 完成回调转发
  */
-void bmi088_spi_txrx_cplt_callback(SPI_HandleTypeDef* hspi) {
-    bmi088_spi_txrx_complete(hspi);
+void bmi088_spi_txrx_cplt_callback(void* spi_handle) {
+    bmi088_spi_txrx_complete(spi_handle);
 }
 
 /**
  * @brief BMI088 SPI 错误回调转发
  */
-void bmi088_spi_error_callback(SPI_HandleTypeDef* hspi) {
-    bmi088_spi_error(hspi);
+void bmi088_spi_error_callback(void* spi_handle) {
+    bmi088_spi_error(spi_handle);
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
@@ -287,7 +301,18 @@ void bmi088_spi_error_callback(SPI_HandleTypeDef* hspi) {
 /**
  * @brief 初始化 BMI088 具体 IMU 实例
  */
-static ImuStatus bmi088_init(void) {
+static ImuStatus bmi088_init(const void* config) {
+    const Bmi088Config* bmi088_config = (const Bmi088Config*)config;
+
+    if(!bmi088_config_is_valid(bmi088_config)) {
+        return IMU_STATUS_INVALID_PARAM;
+    }
+
+    s_bmi088_ops = bmi088_config->ops;
+    s_bmi088_accel_sen = bmi088_config->accel_sen;
+    s_bmi088_gyro_sen = bmi088_config->gyro_sen;
+    s_bmi088_accel_int_pin = bmi088_config->accel_int_pin;
+    s_bmi088_gyro_int_pin = bmi088_config->gyro_int_pin;
     s_bmi088_init_error = bmi088_device_init();
     bmi088_async_init();
 
@@ -295,7 +320,7 @@ static ImuStatus bmi088_init(void) {
     s_bmi088_gyro = (ImuGyro){ 0.0f, 0.0f, 0.0f };
     s_bmi088_angle = (ImuAngle){ 0.0f, 0.0f, 0.0f };
     s_bmi088_temp = 0.0f;
-    s_bmi088_last_update_tick = HAL_GetTick();
+    s_bmi088_last_update_tick = bmi088_now_ms();
     s_bmi088_has_gyro = false;
     s_bmi088_has_acc = false;
     s_bmi088_is_initialized = (s_bmi088_init_error == BMI088_ERROR_NO_ERROR);
@@ -322,7 +347,7 @@ static ImuStatus bmi088_update(void) {
     (void)bmi088_async_poll();
 
     if(bmi088_async_get_gyro(raw_gyro)) {
-        uint32_t now_tick = HAL_GetTick();
+        uint32_t now_tick = bmi088_now_ms();
         float dt = (float)(now_tick - s_bmi088_last_update_tick) * 0.001f;
 
         s_bmi088_gyro = bmi088_make_gyro(raw_gyro);
@@ -366,7 +391,7 @@ static ImuStatus bmi088_blocking_update(void) {
     bmi088_read_gyro_raw(raw_gyro);
     bmi088_read_accel_raw(raw_acc);
 
-    now_tick = HAL_GetTick();
+    now_tick = bmi088_now_ms();
     dt = (float)(now_tick - s_bmi088_last_update_tick) * 0.001f;
 
     s_bmi088_gyro = bmi088_make_gyro(raw_gyro);
@@ -680,8 +705,12 @@ static bool bmi088_async_get_accel(float accel[3]) {
 /**
  * @brief 处理 BMI088 SPI DMA 完成中断
  */
-static void bmi088_spi_txrx_complete(SPI_HandleTypeDef* hspi) {
-    if(hspi != bmi088_get_spi_handle()) {
+static void bmi088_spi_txrx_complete(void* spi_handle) {
+    if(s_bmi088_ops == 0) {
+        return;
+    }
+
+    if(spi_handle != bmi088_get_spi_handle()) {
         return;
     }
 
@@ -704,8 +733,12 @@ static void bmi088_spi_txrx_complete(SPI_HandleTypeDef* hspi) {
 /**
  * @brief 处理 BMI088 SPI 错误中断
  */
-static void bmi088_spi_error(SPI_HandleTypeDef* hspi) {
-    if(hspi != bmi088_get_spi_handle()) {
+static void bmi088_spi_error(void* spi_handle) {
+    if(s_bmi088_ops == 0) {
+        return;
+    }
+
+    if(spi_handle != bmi088_get_spi_handle()) {
         return;
     }
 
@@ -713,9 +746,33 @@ static void bmi088_spi_error(SPI_HandleTypeDef* hspi) {
     s_bmi088_dma_state = BMI088_DMA_IDLE;
 }
 
-/**
- * @brief 初始化 BMI088 GPIO
- */
+static uint32_t bmi088_now_ms(void) {
+    return s_bmi088_ops->now_ms();
+}
+
+static bool bmi088_config_is_valid(const Bmi088Config* config) {
+    const Bmi088PortOps* ops = 0;
+
+    if(config == 0 || config->ops == 0) {
+        return false;
+    }
+
+    ops = config->ops;
+    if(ops->accel_cs_low == 0 || ops->accel_cs_high == 0 ||
+        ops->gyro_cs_low == 0 || ops->gyro_cs_high == 0 ||
+        ops->read_write_byte == 0 || ops->transmit_receive_dma == 0 ||
+        ops->get_spi_handle == 0 || ops->now_ms == 0 ||
+        ops->delay_us == 0) {
+        return false;
+    }
+
+    if(config->accel_sen <= 0.0f || config->gyro_sen <= 0.0f) {
+        return false;
+    }
+
+    return true;
+}
+
 static void bmi088_gpio_init(void) {
     bmi088_accel_cs_high();
     bmi088_gyro_cs_high();
@@ -731,8 +788,13 @@ static void bmi088_com_init(void) {}
  * @brief 毫秒级阻塞延时
  */
 static void bmi088_delay_ms(uint16_t ms) {
-    while(ms--) {
-        bmi088_delay_us(1000U);
+    if(s_bmi088_ops != 0 && s_bmi088_ops->delay_ms != 0) {
+        s_bmi088_ops->delay_ms(ms);
+    }
+    else {
+        while(ms--) {
+            bmi088_delay_us(1000U);
+        }
     }
 }
 
@@ -740,26 +802,8 @@ static void bmi088_delay_ms(uint16_t ms) {
  * @brief 微秒级阻塞延时
  */
 static void bmi088_delay_us(uint16_t us) {
-    uint32_t ticks = us * (SystemCoreClock / 1000000U);
-    uint32_t told = SysTick->VAL;
-    uint32_t tcnt = 0U;
-    uint32_t reload = SysTick->LOAD;
-
-    while(1) {
-        uint32_t tnow = SysTick->VAL;
-        if(tnow != told) {
-            if(tnow < told) {
-                tcnt += told - tnow;
-            }
-            else {
-                tcnt += reload - tnow + told;
-            }
-
-            told = tnow;
-            if(tcnt >= ticks) {
-                break;
-            }
-        }
+    if(s_bmi088_ops != 0 && s_bmi088_ops->delay_us != 0) {
+        s_bmi088_ops->delay_us(us);
     }
 }
 
@@ -767,52 +811,49 @@ static void bmi088_delay_us(uint16_t us) {
  * @brief 拉低 accel 片选
  */
 static void bmi088_accel_cs_low(void) {
-    HAL_GPIO_WritePin(ACC_CS_GPIO_Port, ACC_CS_Pin, GPIO_PIN_RESET);
+    s_bmi088_ops->accel_cs_low();
 }
 
 /**
  * @brief 拉高 accel 片选
  */
 static void bmi088_accel_cs_high(void) {
-    HAL_GPIO_WritePin(ACC_CS_GPIO_Port, ACC_CS_Pin, GPIO_PIN_SET);
+    s_bmi088_ops->accel_cs_high();
 }
 
 /**
  * @brief 拉低 gyro 片选
  */
 static void bmi088_gyro_cs_low(void) {
-    HAL_GPIO_WritePin(GYRO_CS_GPIO_Port, GYRO_CS_Pin, GPIO_PIN_RESET);
+    s_bmi088_ops->gyro_cs_low();
 }
 
 /**
  * @brief 拉高 gyro 片选
  */
 static void bmi088_gyro_cs_high(void) {
-    HAL_GPIO_WritePin(GYRO_CS_GPIO_Port, GYRO_CS_Pin, GPIO_PIN_SET);
+    s_bmi088_ops->gyro_cs_high();
 }
 
 /**
  * @brief SPI 单字节收发
  */
 static uint8_t bmi088_read_write_byte(uint8_t tx_data) {
-    uint8_t rx_data = 0U;
-
-    (void)HAL_SPI_TransmitReceive(&BMI088_USING_SPI_UNIT, &tx_data, &rx_data, 1U, 1000U);
-    return rx_data;
+    return s_bmi088_ops->read_write_byte(tx_data);
 }
 
 /**
  * @brief 获取 BMI088 当前使用的 SPI 句柄
  */
-static SPI_HandleTypeDef* bmi088_get_spi_handle(void) {
-    return &BMI088_USING_SPI_UNIT;
+static void* bmi088_get_spi_handle(void) {
+    return s_bmi088_ops->get_spi_handle();
 }
 
 /**
  * @brief 启动 BMI088 SPI DMA 收发
  */
-static HAL_StatusTypeDef bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len) {
-    return HAL_SPI_TransmitReceive_DMA(&BMI088_USING_SPI_UNIT, tx_data, rx_data, len);
+static bool bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len) {
+    return s_bmi088_ops->transmit_receive_dma(tx_data, rx_data, len);
 }
 
 /**
@@ -908,7 +949,7 @@ static bool bmi088_start_gyro_dma(void) {
     bmi088_dma_maintain_before_start(BMI088_DMA_GYRO_FRAME_LEN);
     bmi088_gyro_cs_low();
 
-    if(bmi088_spi_transmit_receive_dma(s_bmi088_tx, s_bmi088_rx, BMI088_DMA_GYRO_FRAME_LEN) != HAL_OK) {
+    if(!bmi088_spi_transmit_receive_dma(s_bmi088_tx, s_bmi088_rx, BMI088_DMA_GYRO_FRAME_LEN)) {
         bmi088_gyro_cs_high();
         s_bmi088_dma_state = BMI088_DMA_IDLE;
         return false;
@@ -931,7 +972,7 @@ static bool bmi088_start_accel_dma(void) {
     bmi088_dma_maintain_before_start(BMI088_DMA_ACCEL_FRAME_LEN);
     bmi088_accel_cs_low();
 
-    if(bmi088_spi_transmit_receive_dma(s_bmi088_tx, s_bmi088_rx, BMI088_DMA_ACCEL_FRAME_LEN) != HAL_OK) {
+    if(!bmi088_spi_transmit_receive_dma(s_bmi088_tx, s_bmi088_rx, BMI088_DMA_ACCEL_FRAME_LEN)) {
         bmi088_accel_cs_high();
         s_bmi088_dma_state = BMI088_DMA_IDLE;
         return false;

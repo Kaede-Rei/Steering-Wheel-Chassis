@@ -24,12 +24,12 @@ ImuStatus imu_set_instance(const ImuInterface* instance) {
 /**
  * @brief 初始化当前绑定的 IMU 实例
  */
-ImuStatus imu_init(void) {
+ImuStatus imu_init(const void* config) {
     if(imu_instance == 0 || imu_instance->init == 0) {
         return IMU_STATUS_NO_INSTANCE;
     }
 
-    return imu_instance->init();
+    return imu_instance->init(config);
 }
 
 /**

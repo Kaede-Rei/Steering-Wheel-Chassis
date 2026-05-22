@@ -85,7 +85,7 @@ typedef struct {
      * @brief 初始化具体 IMU 驱动
      * @return 状态码
      */
-    ImuStatus(*init)(void);
+    ImuStatus(*init)(const void* config);
     /**
      * @brief 更新具体 IMU 的最新缓存
      * @return 状态码
@@ -122,7 +122,7 @@ extern const ImuInterface* imu_instance;
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
 ImuStatus imu_set_instance(const ImuInterface* instance);
-ImuStatus imu_init(void);
+ImuStatus imu_init(const void* config);
 ImuStatus imu_update(void);
 ImuAcc imu_get_acc(void);
 ImuGyro imu_get_gyro(void);

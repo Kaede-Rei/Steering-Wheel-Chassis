@@ -5,6 +5,7 @@ Core/Src/*
 
 build/
 Drivers/
+external/
 
 .clang-format
 .cproject

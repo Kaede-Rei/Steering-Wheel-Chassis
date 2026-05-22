@@ -34,7 +34,9 @@ src/device/imu
 
 void app_init(void) {
     imu_set_instance(&bmi088_blocking_instance);
-    imu_init();
+    Bmi088Config bmi088_config;
+    bmi088_make_config(&bmi088_config, &bmi088_ops);
+    imu_init(&bmi088_config);
 }
 
 void app_loop(void) {
@@ -62,12 +64,14 @@ void app_loop(void) {
 
 void app_init(void) {
     imu_set_instance(&bmi088_instance);
-    imu_init();
+    Bmi088Config bmi088_config;
+    bmi088_make_config(&bmi088_config, &bmi088_ops);
+    imu_init(&bmi088_config);
 
     exti_register_callback(ACC_INT_Pin, bmi088_exti_callback);
     exti_register_callback(GYRO_INT_Pin, bmi088_exti_callback);
-    spi_register_txrx_complete_callback(&hspi2, bmi088_spi_txrx_cplt_callback);
-    spi_register_error_callback(&hspi2, bmi088_spi_error_callback);
+    spi_register_txrx_complete_callback(&hspi2, bmi088_spi_txrx_complete_callback);
+    spi_register_error_callback(&hspi2, bmi088_spi_error_forward_callback);
 }
 
 void app_loop(void) {
@@ -85,7 +89,7 @@ void app_loop(void) {
 
 ## 接口说明
 
-- `imu_init()`
+- `imu_init(config)`
   初始化当前绑定的 IMU 实例
 - `imu_update()`
   刷新当前实例缓存
@@ -99,7 +103,7 @@ void app_loop(void) {
 ## BMI088 说明
 
 - `bmi088.c` 已经自包含了 BMI088 寄存器定义、SPI 读写、阻塞读取、DMA 轮询和回调逻辑
-- 当前默认使用 `SPI2`，由 `bmi088.c` 内部的 `BMI088_USING_SPI_UNIT` 绑定到 `hspi2`
+- 默认由 `Bmi088PortOps` 注入 SPI、CS、延时和时间接口
 - `roll / pitch` 由加速度解算并做简单互补融合
 - `yaw` 由陀螺仪角速度积分得到
 

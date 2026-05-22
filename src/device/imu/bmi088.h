@@ -1,7 +1,9 @@
 #ifndef _bmi088_h_
 #define _bmi088_h_
 
-#include "main.h" // IWYU pragma: keep
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "imu/imu.h"
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
@@ -29,6 +31,27 @@ typedef enum {
     BMI088_ERROR_NO_SENSOR = 0xFF,
 } Bmi088Error;
 
+typedef struct {
+    void (*accel_cs_low)(void);
+    void (*accel_cs_high)(void);
+    void (*gyro_cs_low)(void);
+    void (*gyro_cs_high)(void);
+    uint8_t(*read_write_byte)(uint8_t tx_data);
+    bool (*transmit_receive_dma)(uint8_t* tx_data, uint8_t* rx_data, uint16_t len);
+    void* (*get_spi_handle)(void);
+    uint32_t(*now_ms)(void);
+    void (*delay_ms)(uint32_t ms);
+    void (*delay_us)(uint16_t us);
+} Bmi088PortOps;
+
+typedef struct {
+    const Bmi088PortOps* ops;
+    float accel_sen;
+    float gyro_sen;
+    uint16_t accel_int_pin;
+    uint16_t gyro_int_pin;
+} Bmi088Config;
+
 /**
  * @brief BMI088 IT + DMA IMU 实例
  */
@@ -41,11 +64,12 @@ extern const ImuInterface bmi088_blocking_instance;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
+ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops);
 const char* bmi088_error_str(Bmi088Error error);
 Bmi088Error bmi088_get_init_error(void);
 float bmi088_get_temp(void);
 void bmi088_exti_callback(uint16_t gpio_pin);
-void bmi088_spi_txrx_cplt_callback(SPI_HandleTypeDef* hspi);
-void bmi088_spi_error_callback(SPI_HandleTypeDef* hspi);
+void bmi088_spi_txrx_cplt_callback(void* spi_handle);
+void bmi088_spi_error_callback(void* spi_handle);
 
 #endif
