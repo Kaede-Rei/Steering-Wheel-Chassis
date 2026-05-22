@@ -11,7 +11,7 @@
 
 
 // ! service ! //
-#include "assemble.h"
+#include "assemble/assemble.h"
 #include "chassis.h"
 #include "remote.h"
 
@@ -50,7 +50,29 @@ static uint8_t led_state = 0u;
  * 负责装配各服务并清零底盘速度命令
  */
 static inline void entry_init(void) {
-    assemble_init();
+    if(assemble_log() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT log ready");
+    delay_ms(100);
+
+    if(assemble_rgb() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT rgb init step done");
+    delay_ms(100);
+
+    if(assemble_imu() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT imu init step done");
+    delay_ms(100);
+
+    if(assemble_chassis() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT chassis init step done");
+    delay_ms(100);
+
+    if(assemble_remote() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT remote init step done");
+    delay_ms(100);
+
+    if(assemble_tim6_500hz() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT tim6 500hz init step done");
+    delay_ms(100);
 
     log_info("System initialized successfully");
     delay_ms(500);

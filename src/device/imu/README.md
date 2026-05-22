@@ -70,8 +70,8 @@ void app_init(void) {
 
     exti_register_callback(ACC_INT_Pin, bmi088_exti_callback);
     exti_register_callback(GYRO_INT_Pin, bmi088_exti_callback);
-    spi_register_txrx_complete_callback(&hspi2, bmi088_spi_txrx_complete_callback);
-    spi_register_error_callback(&hspi2, bmi088_spi_error_forward_callback);
+    spi_register_txrx_complete_callback(&hspi2, stm32_bmi088_spi_txrx_complete_callback);
+    spi_register_error_callback(&hspi2, stm32_bmi088_spi_error_callback);
 }
 
 void app_loop(void) {
