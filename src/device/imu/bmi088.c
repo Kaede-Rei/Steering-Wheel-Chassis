@@ -77,7 +77,9 @@ typedef enum {
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
-static ImuStatus bmi088_init(const void* config);
+static ImuStatus bmi088_init_async(const void* config);
+static ImuStatus bmi088_init_blocking(const void* config);
+static ImuStatus bmi088_init_common(const void* config, bool require_async_ops);
 static ImuStatus bmi088_update(void);
 static ImuStatus bmi088_blocking_update(void);
 static ImuAcc bmi088_get_acc(void);
@@ -97,7 +99,7 @@ static uint8_t bmi088_read_write_byte(uint8_t tx_data);
 static void* bmi088_get_spi_handle(void);
 static bool bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len);
 static uint32_t bmi088_now_ms(void);
-static bool bmi088_config_is_valid(const Bmi088Config* config);
+static bool bmi088_config_is_valid(const Bmi088Config* config, bool require_async_ops);
 
 static Bmi088Error bmi088_device_init(void);
 static Bmi088Error bmi088_accel_init(void);
@@ -190,7 +192,7 @@ static bool s_bmi088_has_acc = false;
  * @brief BMI088 通用 IMU 实例
  */
 const ImuInterface bmi088_instance = {
-    .init = bmi088_init,
+    .init = bmi088_init_async,
     .update = bmi088_update,
     .get_acc = bmi088_get_acc,
     .get_gyro = bmi088_get_gyro,
@@ -202,7 +204,7 @@ const ImuInterface bmi088_instance = {
  * @brief BMI088 阻塞式 IMU 实例
  */
 const ImuInterface bmi088_blocking_instance = {
-    .init = bmi088_init,
+    .init = bmi088_init_blocking,
     .update = bmi088_blocking_update,
     .get_acc = bmi088_get_acc,
     .get_gyro = bmi088_get_gyro,
@@ -210,7 +212,7 @@ const ImuInterface bmi088_blocking_instance = {
     .status_str = bmi088_status_str,
 };
 
-ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops) {
+ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, const uint16_t accel_int_pin, const uint16_t gyro_int_pin) {
     if(config == 0 || ops == 0) {
         return IMU_STATUS_INVALID_PARAM;
     }
@@ -218,8 +220,8 @@ ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops) {
     config->ops = ops;
     config->accel_sen = BMI088_ACCEL_3G_SEN;
     config->gyro_sen = BMI088_GYRO_2000_SEN;
-    config->accel_int_pin = 0U;
-    config->gyro_int_pin = 0U;
+    config->accel_int_pin = accel_int_pin;
+    config->gyro_int_pin = gyro_int_pin;
     return IMU_STATUS_OK;
 }
 
@@ -299,12 +301,26 @@ void bmi088_spi_error_callback(void* spi_handle) {
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 /**
+ * @brief 初始化 BMI088 具体 IMU 实例（非阻塞）
+ */
+static ImuStatus bmi088_init_async(const void* config) {
+    return bmi088_init_common(config, true);
+}
+
+/**
+ * @brief 初始化 BMI088 具体 IMU 实例（阻塞）
+ */
+static ImuStatus bmi088_init_blocking(const void* config) {
+    return bmi088_init_common(config, false);
+}
+
+/**
  * @brief 初始化 BMI088 具体 IMU 实例
  */
-static ImuStatus bmi088_init(const void* config) {
+static ImuStatus bmi088_init_common(const void* config, bool require_async_ops) {
     const Bmi088Config* bmi088_config = (const Bmi088Config*)config;
 
-    if(!bmi088_config_is_valid(bmi088_config)) {
+    if(!bmi088_config_is_valid(bmi088_config, require_async_ops)) {
         return IMU_STATUS_INVALID_PARAM;
     }
 
@@ -750,7 +766,7 @@ static uint32_t bmi088_now_ms(void) {
     return s_bmi088_ops->now_ms();
 }
 
-static bool bmi088_config_is_valid(const Bmi088Config* config) {
+static bool bmi088_config_is_valid(const Bmi088Config* config, bool require_async_ops) {
     const Bmi088PortOps* ops = 0;
 
     if(config == 0 || config->ops == 0) {
@@ -760,9 +776,13 @@ static bool bmi088_config_is_valid(const Bmi088Config* config) {
     ops = config->ops;
     if(ops->accel_cs_low == 0 || ops->accel_cs_high == 0 ||
         ops->gyro_cs_low == 0 || ops->gyro_cs_high == 0 ||
-        ops->read_write_byte == 0 || ops->transmit_receive_dma == 0 ||
-        ops->get_spi_handle == 0 || ops->now_ms == 0 ||
+        ops->read_write_byte == 0 || ops->now_ms == 0 ||
         ops->delay_us == 0) {
+        return false;
+    }
+
+    if(require_async_ops &&
+        (ops->transmit_receive_dma == 0 || ops->get_spi_handle == 0)) {
         return false;
     }
 

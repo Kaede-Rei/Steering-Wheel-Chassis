@@ -64,7 +64,7 @@ extern const ImuInterface bmi088_blocking_instance;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
-ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops);
+ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, const uint16_t accel_int_pin, const uint16_t gyro_int_pin);
 const char* bmi088_error_str(Bmi088Error error);
 Bmi088Error bmi088_get_init_error(void);
 float bmi088_get_temp(void);

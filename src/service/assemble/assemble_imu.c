@@ -19,12 +19,9 @@ SystemStatus assemble_imu(void) {
         return SYSTEM_STATUS_ERROR;
     }
 
-    if(bmi088_make_config(&bmi088_config, stm32_bmi088_get_ops()) != IMU_STATUS_OK) {
+    if(bmi088_make_config(&bmi088_config, stm32_bmi088_get_ops(), accel_int_pin, gyro_int_pin) != IMU_STATUS_OK) {
         return SYSTEM_STATUS_ERROR;
     }
-
-    bmi088_config.accel_int_pin = accel_int_pin;
-    bmi088_config.gyro_int_pin = gyro_int_pin;
 
     status = imu.init(&bmi088_config);
     if(status != IMU_STATUS_OK) {
