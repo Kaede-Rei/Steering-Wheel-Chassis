@@ -1,6 +1,5 @@
 #include "bmi088.h"
 
-#include <math.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -21,10 +20,6 @@
 #define BMI088_DMA_GYRO_FRAME_LEN           7U
 #define BMI088_DMA_ACCEL_FRAME_LEN          8U
 #define BMI088_SPI_DUMMY_BYTE               0x55U
-
-#define BMI088_COMPLEMENTARY_FILTER_ALPHA   0.98f
-#define BMI088_PI                           3.14159265358979323846f
-#define BMI088_2PI                          (2.0f * BMI088_PI)
 
 #define BMI088_ACC_CHIP_ID                  0x00U
 #define BMI088_ACC_CHIP_ID_VALUE            0x1EU
@@ -90,6 +85,7 @@ static ImuStatus bmi088_blocking_update(void);
 static ImuAcc bmi088_get_acc(void);
 static ImuGyro bmi088_get_gyro(void);
 static ImuAngle bmi088_get_angle(void);
+static ImuStatus bmi088_get_sample(ImuSample* sample);
 static const char* bmi088_status_str(ImuStatus status);
 
 static void bmi088_gpio_init(void);
@@ -104,6 +100,7 @@ static uint8_t bmi088_read_write_byte(uint8_t tx_data);
 static void* bmi088_get_spi_handle(void);
 static bool bmi088_spi_transmit_receive_dma(uint8_t* tx_data, uint8_t* rx_data, uint16_t len);
 static uint32_t bmi088_now_ms(void);
+static uint32_t bmi088_now_us(void);
 static bool bmi088_config_is_valid(const Bmi088Config* config, bool require_async_ops);
 
 static Bmi088Error bmi088_device_init(void);
@@ -140,9 +137,6 @@ static void bmi088_dma_maintain_after_finish(uint16_t len);
 
 static ImuAcc bmi088_make_acc(const float acc[3]);
 static ImuGyro bmi088_make_gyro(const float gyro[3]);
-static void bmi088_update_angle_by_accel(const ImuAcc* acc);
-static void bmi088_update_angle_by_gyro(const ImuGyro* gyro, float dt);
-static float bmi088_wrap_pi(float angle);
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
@@ -184,14 +178,11 @@ static const uint8_t s_bmi088_gyro_reg_init[BMI088_WRITE_GYRO_REG_NUM][3] = {
 
 static ImuAcc s_bmi088_acc = { 0.0f, 0.0f, 0.0f };
 static ImuGyro s_bmi088_gyro = { 0.0f, 0.0f, 0.0f };
-static ImuAngle s_bmi088_angle = { 0.0f, 0.0f, 0.0f };
+static ImuSample s_bmi088_sample = { 0 };
 
 static Bmi088Error s_bmi088_init_error = BMI088_ERROR_NO_ERROR;
 static float s_bmi088_temp = 0.0f;
-static uint32_t s_bmi088_last_update_tick = 0U;
 static bool s_bmi088_is_initialized = false;
-static bool s_bmi088_has_gyro = false;
-static bool s_bmi088_has_acc = false;
 static volatile Bmi088AsyncNext s_bmi088_async_next = BMI088_ASYNC_NEXT_GYRO;
 
 /**
@@ -203,6 +194,7 @@ const ImuInterface bmi088_instance = {
     .get_acc = bmi088_get_acc,
     .get_gyro = bmi088_get_gyro,
     .get_angle = bmi088_get_angle,
+    .get_sample = bmi088_get_sample,
     .status_str = bmi088_status_str,
 };
 
@@ -215,6 +207,7 @@ const ImuInterface bmi088_blocking_instance = {
     .get_acc = bmi088_get_acc,
     .get_gyro = bmi088_get_gyro,
     .get_angle = bmi088_get_angle,
+    .get_sample = bmi088_get_sample,
     .status_str = bmi088_status_str,
 };
 
@@ -275,6 +268,9 @@ float bmi088_get_temp(void) {
     }
 
     bmi088_read_temp_raw(&s_bmi088_temp);
+    s_bmi088_sample.temperature = s_bmi088_temp;
+    s_bmi088_sample.timestamp_us = bmi088_now_us();
+    s_bmi088_sample.flags |= IMU_SAMPLE_TEMP_NEW;
     return s_bmi088_temp;
 }
 
@@ -340,11 +336,8 @@ static ImuStatus bmi088_init_common(const void* config, bool require_async_ops) 
 
     s_bmi088_acc = (ImuAcc){ 0.0f, 0.0f, 0.0f };
     s_bmi088_gyro = (ImuGyro){ 0.0f, 0.0f, 0.0f };
-    s_bmi088_angle = (ImuAngle){ 0.0f, 0.0f, 0.0f };
+    s_bmi088_sample = (ImuSample){ 0 };
     s_bmi088_temp = 0.0f;
-    s_bmi088_last_update_tick = bmi088_now_ms();
-    s_bmi088_has_gyro = false;
-    s_bmi088_has_acc = false;
     s_bmi088_is_initialized = (s_bmi088_init_error == BMI088_ERROR_NO_ERROR);
 
     if(!s_bmi088_is_initialized) {
@@ -369,24 +362,18 @@ static ImuStatus bmi088_update(void) {
     (void)bmi088_async_poll();
 
     if(bmi088_async_get_gyro(raw_gyro)) {
-        uint32_t now_tick = bmi088_now_ms();
-        float dt = (float)(now_tick - s_bmi088_last_update_tick) * 0.001f;
-
         s_bmi088_gyro = bmi088_make_gyro(raw_gyro);
-
-        if(s_bmi088_has_gyro) {
-            bmi088_update_angle_by_gyro(&s_bmi088_gyro, dt);
-        }
-
-        s_bmi088_last_update_tick = now_tick;
-        s_bmi088_has_gyro = true;
+        s_bmi088_sample.gyro = s_bmi088_gyro;
+        s_bmi088_sample.timestamp_us = bmi088_now_us();
+        s_bmi088_sample.flags |= IMU_SAMPLE_GYRO_NEW;
         updated = true;
     }
 
     if(bmi088_async_get_accel(raw_acc)) {
         s_bmi088_acc = bmi088_make_acc(raw_acc);
-        bmi088_update_angle_by_accel(&s_bmi088_acc);
-        s_bmi088_has_acc = true;
+        s_bmi088_sample.acc = s_bmi088_acc;
+        s_bmi088_sample.timestamp_us = bmi088_now_us();
+        s_bmi088_sample.flags |= IMU_SAMPLE_ACC_NEW;
         updated = true;
     }
 
@@ -403,8 +390,6 @@ static ImuStatus bmi088_update(void) {
 static ImuStatus bmi088_blocking_update(void) {
     float raw_acc[3] = { 0.0f };
     float raw_gyro[3] = { 0.0f };
-    uint32_t now_tick = 0U;
-    float dt = 0.0f;
 
     if(!s_bmi088_is_initialized) {
         return IMU_STATUS_NOT_INITIALIZE;
@@ -413,21 +398,12 @@ static ImuStatus bmi088_blocking_update(void) {
     bmi088_read_gyro_raw(raw_gyro);
     bmi088_read_accel_raw(raw_acc);
 
-    now_tick = bmi088_now_ms();
-    dt = (float)(now_tick - s_bmi088_last_update_tick) * 0.001f;
-
     s_bmi088_gyro = bmi088_make_gyro(raw_gyro);
     s_bmi088_acc = bmi088_make_acc(raw_acc);
-
-    if(s_bmi088_has_gyro) {
-        bmi088_update_angle_by_gyro(&s_bmi088_gyro, dt);
-    }
-
-    bmi088_update_angle_by_accel(&s_bmi088_acc);
-
-    s_bmi088_last_update_tick = now_tick;
-    s_bmi088_has_gyro = true;
-    s_bmi088_has_acc = true;
+    s_bmi088_sample.gyro = s_bmi088_gyro;
+    s_bmi088_sample.acc = s_bmi088_acc;
+    s_bmi088_sample.timestamp_us = bmi088_now_us();
+    s_bmi088_sample.flags = IMU_SAMPLE_GYRO_NEW | IMU_SAMPLE_ACC_NEW;
     return IMU_STATUS_OK;
 }
 
@@ -449,7 +425,27 @@ static ImuGyro bmi088_get_gyro(void) {
  * @brief 获取 BMI088 最近一次缓存的姿态角
  */
 static ImuAngle bmi088_get_angle(void) {
-    return s_bmi088_angle;
+    ImuAngle angle = { 0.0f, 0.0f, 0.0f };
+
+    return angle;
+}
+
+static ImuStatus bmi088_get_sample(ImuSample* sample) {
+    if(sample == 0) {
+        return IMU_STATUS_INVALID_PARAM;
+    }
+
+    if(!s_bmi088_is_initialized) {
+        return IMU_STATUS_NOT_INITIALIZE;
+    }
+
+    if(s_bmi088_sample.flags == IMU_SAMPLE_NONE) {
+        return IMU_STATUS_NOT_READY;
+    }
+
+    *sample = s_bmi088_sample;
+    s_bmi088_sample.flags = IMU_SAMPLE_NONE;
+    return IMU_STATUS_OK;
 }
 
 /**
@@ -800,6 +796,10 @@ static uint32_t bmi088_now_ms(void) {
     return s_bmi088_ops->now_ms();
 }
 
+static uint32_t bmi088_now_us(void) {
+    return bmi088_now_ms() * 1000U;
+}
+
 static bool bmi088_config_is_valid(const Bmi088Config* config, bool require_async_ops) {
     const Bmi088PortOps* ops = 0;
 
@@ -1147,62 +1147,3 @@ static ImuGyro bmi088_make_gyro(const float gyro[3]) {
     return result;
 }
 
-/**
- * @brief 使用加速度更新 roll / pitch
- */
-static void bmi088_update_angle_by_accel(const ImuAcc* acc) {
-    float roll_acc = 0.0f;
-    float pitch_acc = 0.0f;
-
-    if(acc == 0) {
-        return;
-    }
-
-    roll_acc = atan2f(acc->y, acc->z);
-    pitch_acc = atan2f(-acc->x, sqrtf(acc->y * acc->y + acc->z * acc->z));
-
-    if(!s_bmi088_has_acc) {
-        s_bmi088_angle.roll = roll_acc;
-        s_bmi088_angle.pitch = pitch_acc;
-        return;
-    }
-
-    s_bmi088_angle.roll =
-        BMI088_COMPLEMENTARY_FILTER_ALPHA * s_bmi088_angle.roll +
-        (1.0f - BMI088_COMPLEMENTARY_FILTER_ALPHA) * roll_acc;
-    s_bmi088_angle.pitch =
-        BMI088_COMPLEMENTARY_FILTER_ALPHA * s_bmi088_angle.pitch +
-        (1.0f - BMI088_COMPLEMENTARY_FILTER_ALPHA) * pitch_acc;
-}
-
-/**
- * @brief 使用角速度积分更新姿态角
- */
-static void bmi088_update_angle_by_gyro(const ImuGyro* gyro, float dt) {
-    if(gyro == 0 || dt <= 0.0f) {
-        return;
-    }
-
-    s_bmi088_angle.roll += gyro->x * dt;
-    s_bmi088_angle.pitch += gyro->y * dt;
-    s_bmi088_angle.yaw += gyro->z * dt;
-
-    s_bmi088_angle.roll = bmi088_wrap_pi(s_bmi088_angle.roll);
-    s_bmi088_angle.pitch = bmi088_wrap_pi(s_bmi088_angle.pitch);
-    s_bmi088_angle.yaw = bmi088_wrap_pi(s_bmi088_angle.yaw);
-}
-
-/**
- * @brief 将角度包裹到 [-pi, pi)
- */
-static float bmi088_wrap_pi(float angle) {
-    while(angle >= BMI088_PI) {
-        angle -= BMI088_2PI;
-    }
-
-    while(angle < -BMI088_PI) {
-        angle += BMI088_2PI;
-    }
-
-    return angle;
-}

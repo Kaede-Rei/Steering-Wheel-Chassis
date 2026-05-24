@@ -74,6 +74,39 @@ typedef struct {
     float yaw;
 } ImuAngle;
 
+typedef enum {
+    IMU_SAMPLE_NONE = 0,
+    IMU_SAMPLE_ACC_NEW = 1 << 0,
+    IMU_SAMPLE_GYRO_NEW = 1 << 1,
+    IMU_SAMPLE_TEMP_NEW = 1 << 2,
+} ImuSampleFlags;
+
+typedef struct {
+    ImuAcc acc;
+    ImuGyro gyro;
+    float temperature;
+    uint32_t timestamp_us;
+    uint8_t flags;
+} ImuSample;
+
+typedef enum {
+    IMU_ATTITUDE_NONE = 0,
+    IMU_ATTITUDE_COMPLEMENTARY,
+    IMU_ATTITUDE_MAHONY_6AXIS,
+} ImuAttitudeMode;
+
+typedef struct {
+    ImuAttitudeMode mode;
+    uint32_t(*now_us)(void);
+    uint16_t gyro_calib_samples;
+    float acc_norm;
+    float acc_norm_tolerance;
+    float complementary_tau;
+    float mahony_kp;
+    float mahony_ki;
+    float mahony_ki_z;
+} ImuAttitudeConfig;
+
 /**
  * @brief IMU 通用接口表
  *
@@ -106,6 +139,7 @@ typedef struct {
      * @return 姿态角结构体
      */
     ImuAngle(*get_angle)(void);
+    ImuStatus(*get_sample)(ImuSample* sample);
     /**
      * @brief 将状态码转换为常量字符串
      * @param status 状态码
@@ -127,6 +161,10 @@ ImuStatus imu_update(void);
 ImuAcc imu_get_acc(void);
 ImuGyro imu_get_gyro(void);
 ImuAngle imu_get_angle(void);
+ImuStatus imu_get_sample(ImuSample* sample);
+ImuStatus imu_attitude_enable(const ImuAttitudeConfig* config);
+ImuStatus imu_attitude_disable(void);
+ImuStatus imu_reset_yaw(float yaw);
 const char* imu_status_str(ImuStatus status);
 
 #endif
