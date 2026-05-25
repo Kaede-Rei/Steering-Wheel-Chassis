@@ -22,6 +22,8 @@
 #define BMI088_DMA_ACCEL_FRAME_LEN          8U
 #define BMI088_SPI_DUMMY_BYTE               0x55U
 #define BMI088_TEMP_UPDATE_PERIOD_US        100000U
+#define BMI088_GYRO_STALE_TIMEOUT_US        10000U
+#define BMI088_ACCEL_STALE_TIMEOUT_US       10000U
 
 #define BMI088_ACC_CHIP_ID                  0x00U
 #define BMI088_ACC_CHIP_ID_VALUE            0x1EU
@@ -673,8 +675,8 @@ static void bmi088_read_temp_raw(float* temperature) {
 static void bmi088_async_init(void) {
     s_bmi088_dma_state = BMI088_DMA_IDLE;
     s_bmi088_async_next = BMI088_ASYNC_NEXT_GYRO;
-    s_bmi088_gyro_pending = 0U;
-    s_bmi088_accel_pending = 0U;
+    s_bmi088_gyro_pending = 1U;
+    s_bmi088_accel_pending = 1U;
     s_bmi088_gyro_ready = 0U;
     s_bmi088_accel_ready = 0U;
     memset(s_bmi088_tx, 0, sizeof(s_bmi088_tx));
@@ -702,10 +704,24 @@ static void bmi088_notify_accel_data_ready(void) {
  * @brief 轮询并启动 BMI088 DMA 读取
  */
 static bool bmi088_async_poll(void) {
+    uint32_t now_us = 0U;
     bool prefer_gyro = false;
 
     if(s_bmi088_dma_state != BMI088_DMA_IDLE) {
         return false;
+    }
+
+    now_us = bmi088_now_us();
+    if(s_bmi088_gyro_pending == 0U &&
+        (s_bmi088_sample.gyro_timestamp_us == 0U ||
+            (now_us - s_bmi088_sample.gyro_timestamp_us) > BMI088_GYRO_STALE_TIMEOUT_US)) {
+        s_bmi088_gyro_pending = 1U;
+    }
+
+    if(s_bmi088_accel_pending == 0U &&
+        (s_bmi088_sample.acc_timestamp_us == 0U ||
+            (now_us - s_bmi088_sample.acc_timestamp_us) > BMI088_ACCEL_STALE_TIMEOUT_US)) {
+        s_bmi088_accel_pending = 1U;
     }
 
     prefer_gyro = (s_bmi088_async_next == BMI088_ASYNC_NEXT_GYRO);
