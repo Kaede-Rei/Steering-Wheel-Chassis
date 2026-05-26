@@ -14,6 +14,7 @@ extern volatile bool tim6_500hz_flag;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
+SystemStatus assemble_delay(void);
 SystemStatus assemble_log(void);
 SystemStatus assemble_rgb(void);
 SystemStatus assemble_imu(void);

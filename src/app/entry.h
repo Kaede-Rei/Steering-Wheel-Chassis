@@ -50,6 +50,7 @@ static uint8_t led_state = 0u;
  * 负责装配各服务并清零底盘速度命令
  */
 static inline void entry_init(void) {
+    if(assemble_delay() != SYSTEM_STATUS_OK) return;
     if(assemble_log() != SYSTEM_STATUS_OK) return;
     log_info("BOOT log ready");
     delay_ms(100);
@@ -121,7 +122,7 @@ static inline void entry_loop(void) {
         }
     }
 
-    if(delay_nb_ms(&log_task, 2000)) {
+    if(delay_nb_us(&log_task, 2000 * 1000)) {
         // log_info("Heartbeat");
         log_vofa(accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, angle.roll, angle.pitch, angle.yaw);
     }
