@@ -21,6 +21,8 @@ SystemStatus assemble_imu(void) {
         return SYSTEM_STATUS_ERROR;
     }
 
+    stm32_bmi088_register_callbacks();
+
     status = imu.init(&bmi088_config);
     if(status != IMU_STATUS_OK) {
         log_error(
@@ -29,7 +31,5 @@ SystemStatus assemble_imu(void) {
             bmi088_error_str(bmi088_get_init_error()));
         return SYSTEM_STATUS_ERROR;
     }
-
-    stm32_bmi088_register_callbacks();
     return SYSTEM_STATUS_OK;
 }

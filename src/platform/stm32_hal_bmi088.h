@@ -15,7 +15,7 @@ uint16_t stm32_bmi088_get_gyro_int_pin(void);
 /**
  * @brief 注册 BMI088 所需的 EXTI 和 SPI 回调
  *
- * 将板级 wiring 下沉到平台层，避免组装层直接依赖底层回调注册细节。
+ * 将板级 wiring 下沉到平台层，避免组装层直接依赖底层回调注册细节
  */
 void stm32_bmi088_register_callbacks(void);
 void stm32_bmi088_spi_txrx_complete_callback(SPI_HandleTypeDef* hspi);

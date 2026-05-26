@@ -73,7 +73,7 @@ ImuAngle angle = imu.get_angle();
 
 - `Bmi088PortOps.now_us`
 
-这样 BMI088 驱动会直接生成高精度 `*_timestamp_us`；如果 `now_us` 为空，则回退到 `now_ms() * 1000`。
+这样 BMI088 驱动会直接生成高精度 `*_timestamp_us`；如果 `now_us` 为空，则回退到 `now_ms() * 1000`
 
 典型初始化：
 

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #include "delay.h"
 #include "stm32_hal_dwt.h"
@@ -20,6 +21,7 @@ static void* bmi088_get_spi_handle(void);
 static void bmi088_delay_us(uint16_t us);
 static void bmi088_cache_clean(const void* addr, uint32_t len);
 static void bmi088_cache_invalidate(const void* addr, uint32_t len);
+static void stm32_bmi088_exti_callback(uint16_t gpio_pin, void* user);
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
@@ -54,8 +56,8 @@ uint16_t stm32_bmi088_get_gyro_int_pin(void) {
 }
 
 void stm32_bmi088_register_callbacks(void) {
-    exti_register_callback(ACC_INT_Pin, bmi088_exti_callback);
-    exti_register_callback(GYRO_INT_Pin, bmi088_exti_callback);
+    (void)exti_register_callback(ACC_INT_Pin, stm32_bmi088_exti_callback, NULL);
+    (void)exti_register_callback(GYRO_INT_Pin, stm32_bmi088_exti_callback, NULL);
     spi_register_txrx_complete_callback(&hspi2, stm32_bmi088_spi_txrx_complete_callback);
     spi_register_error_callback(&hspi2, stm32_bmi088_spi_error_callback);
 }
@@ -66,6 +68,11 @@ void stm32_bmi088_spi_txrx_complete_callback(SPI_HandleTypeDef* hspi) {
 
 void stm32_bmi088_spi_error_callback(SPI_HandleTypeDef* hspi) {
     bmi088_spi_error_callback(hspi);
+}
+
+static void stm32_bmi088_exti_callback(uint16_t gpio_pin, void* user) {
+    (void)user;
+    bmi088_exti_callback(gpio_pin);
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //

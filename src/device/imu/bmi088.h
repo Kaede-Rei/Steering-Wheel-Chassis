@@ -102,7 +102,7 @@ Bmi088Error bmi088_get_init_error(void);
  * @brief 获取缓存的 BMI088 温度
  * @return 温度，单位摄氏度；未初始化时返回 0
  *
- * 温度由 `update()` 内部周期性刷新，此接口不再触发阻塞读取。
+ * 温度由 `update()` 内部周期性刷新，此接口不再触发阻塞读取
  */
 float bmi088_get_temp(void);
 

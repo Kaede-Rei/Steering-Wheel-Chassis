@@ -51,15 +51,15 @@ SystemStatus assemble_chassis(void) {
     };
 
     log_info("CHASSIS assemble begin");
+    if(can_register_rx_callback(&hfdcan1, chassis_steer_can_rx_callback, NULL) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
+    if(can_register_rx_callback(&hfdcan2, chassis_drive_can_rx_callback, NULL) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
+
     if(can_filter_init() != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
     log_info("CHASSIS CAN filter ok");
     if(can_start(&hfdcan1) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
     log_info("CHASSIS FDCAN1 start ok");
     if(can_start(&hfdcan2) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
     log_info("CHASSIS FDCAN2 start ok");
-
-    if(can_register_rx_callback(&hfdcan1, chassis_steer_can_rx_callback, NULL) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
-    if(can_register_rx_callback(&hfdcan2, chassis_drive_can_rx_callback, NULL) != STM32_HAL_CAN_OK) return SYSTEM_STATUS_ERROR;
 
     delay_ms(100);
 
