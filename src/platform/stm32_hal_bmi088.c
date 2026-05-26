@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "delay.h"
+#include "stm32_hal_dwt.h"
 #include "stm32_hal_exti.h"
 #include "stm32_hal_spi.h"
 
@@ -31,6 +32,7 @@ static const Bmi088PortOps bmi088_ops = {
     .transmit_receive_dma = bmi088_transmit_receive_dma,
     .get_spi_handle = bmi088_get_spi_handle,
     .now_ms = HAL_GetTick,
+    .now_us = dwt_get_us,
     .delay_ms = delay_ms,
     .delay_us = bmi088_delay_us,
     .cache_clean = bmi088_cache_clean,
