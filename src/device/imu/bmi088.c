@@ -163,8 +163,8 @@ static volatile uint8_t s_bmi088_accel_pending = 0U;
 static volatile uint8_t s_bmi088_gyro_ready = 0U;
 static volatile uint8_t s_bmi088_accel_ready = 0U;
 
-__attribute__((aligned(32))) static uint8_t s_bmi088_tx[BMI088_DMA_ACCEL_FRAME_LEN];
-__attribute__((aligned(32))) static uint8_t s_bmi088_rx[BMI088_DMA_ACCEL_FRAME_LEN];
+__attribute__((section(".ram_d2"), aligned(32))) static uint8_t s_bmi088_tx[BMI088_DMA_ACCEL_FRAME_LEN];
+__attribute__((section(".ram_d2"), aligned(32))) static uint8_t s_bmi088_rx[BMI088_DMA_ACCEL_FRAME_LEN];
 
 static float s_bmi088_gyro_dma[3];
 static float s_bmi088_accel_dma[3];

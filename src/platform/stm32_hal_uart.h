@@ -33,6 +33,14 @@ extern UART_HandleTypeDef huart5;
 bool uart1_write(const char* data, uint32_t len);
 
 /**
+ * @brief 通过 USART1 阻塞发送一段字符串数据
+ * @param data 数据缓冲区
+ * @param len 数据长度，单位 byte
+ * @return bool `true` 表示发送完成
+ */
+bool uart1_write_blocking(const char* data, uint32_t len);
+
+/**
  * @brief 启动 UART 中断接收
  * @param huart UART 句柄
  * @param data 接收缓冲区

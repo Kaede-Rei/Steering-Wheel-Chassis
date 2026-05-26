@@ -61,7 +61,7 @@
  * 缓存按 32 字节对齐；
  * 这样在解析前可以安全地执行 DCache 失效操作
  */
-__attribute__((aligned(32))) static uint8_t s_dma_rx_buf[IBUS_DMA_RX_BUF_LEN];
+__attribute__((section(".ram_d2"), aligned(32))) static uint8_t s_dma_rx_buf[IBUS_DMA_RX_BUF_LEN];
 
 /**
  * @brief i.BUS 单帧解析缓存

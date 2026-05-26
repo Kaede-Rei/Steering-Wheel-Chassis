@@ -167,6 +167,16 @@ SECTIONS
   } >RAM_D1
 
 
+  /* Buffers accessed by DMA1/DMA2 peripherals such as UART5 and SPI2 */
+  .ram_d2 (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.ram_d2)
+    *(.ram_d2*)
+    . = ALIGN(32);
+  } >RAM_D2
+
+
   /* Buffers accessed by BDMA peripherals such as SPI6 */
   .ram_d3 (NOLOAD) :
   {
