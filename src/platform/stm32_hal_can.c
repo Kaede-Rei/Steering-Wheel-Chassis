@@ -8,11 +8,11 @@
 /**
  * @brief CAN 发送等待邮箱空闲的超时时间，单位 ms
  */
-#define CAN_TX_TIMEOUT_MS 2u
 /**
  * @brief 可注册的 CAN 接收回调槽位数量
  */
 #define CAN_RX_CALLBACK_SLOT_NUM 4u
+#define CAN_RX_MAX_FRAMES_PER_IRQ 8u
 
 /**
  * @brief CAN 接收回调注册槽位
@@ -117,7 +117,6 @@ BspCanStatus can_start(FDCAN_HandleTypeDef* hcan) {
  */
 BspCanStatus can_send(FDCAN_HandleTypeDef* hcan, uint32_t id, const uint8_t* data, uint8_t len) {
     FDCAN_TxHeaderTypeDef tx_header = { 0 };
-    const uint32_t start_tick = HAL_GetTick();
 
     if(hcan == NULL || data == NULL) {
         return STM32_HAL_CAN_INVALID_PARAM;
@@ -136,10 +135,14 @@ BspCanStatus can_send(FDCAN_HandleTypeDef* hcan, uint32_t id, const uint8_t* dat
     tx_header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
     tx_header.MessageMarker = 0u;
 
-    while(HAL_FDCAN_GetTxFifoFreeLevel(hcan) == 0u) {
-        if((HAL_GetTick() - start_tick) >= CAN_TX_TIMEOUT_MS) {
-            return STM32_HAL_CAN_TX_MAILBOX_TIMEOUT;
+    if(HAL_FDCAN_GetTxFifoFreeLevel(hcan) == 0u) {
+        uint32_t pending = hcan->Instance->TXBRP;
+
+        if(pending != 0u) {
+            (void)HAL_FDCAN_AbortTxRequest(hcan, pending);
         }
+
+        return STM32_HAL_CAN_TX_MAILBOX_TIMEOUT;
     }
 
     if(HAL_FDCAN_AddMessageToTxFifoQ(hcan, &tx_header, (uint8_t*)data) != HAL_OK) {
@@ -206,17 +209,20 @@ const char* can_error_code_to_str(BspCanStatus status) {
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef* hfdcan, uint32_t rx_fifo0_its) {
     FDCAN_RxHeaderTypeDef rx_header;
     uint8_t rx_data[8];
+    uint8_t frame_count = 0u;
 
     if((rx_fifo0_its & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == 0u) {
         return;
     }
 
-    while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0u) {
+    while(HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0u
+        && frame_count < CAN_RX_MAX_FRAMES_PER_IRQ) {
         memset(rx_data, 0, sizeof(rx_data));
         if(HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) {
             return;
         }
         can_dispatch_rx(hfdcan, &rx_header, rx_data);
+        ++frame_count;
     }
 }
 

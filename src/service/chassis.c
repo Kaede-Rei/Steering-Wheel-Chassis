@@ -457,14 +457,6 @@ static void chassis_reset_steer_speed_profiles(void);
 static float chassis_calc_steer_track_speed(ChassisModule module, float target_angle);
 
 /**
- * @brief 立即停止所有驱动电机
- *
- * 启动未就绪或遥控离线时调用；
- * 只影响驱动电机，不改变转向目标
- */
-static void chassis_stop_all_drive_motors(void);
-
-/**
  * @brief 在转向反馈缺失时重试上电准备序列
  *
  * 函数负责维护 ready 状态；
@@ -662,7 +654,6 @@ ChassisErrorCode chassis_process(void) {
 
     if(chassis_maintain_motor_startup(steer_feedback_observed, steer_missing_mask,
         drive_feedback_observed, drive_missing_mask) == false) {
-        chassis_stop_all_drive_motors();
         s_chassis.kine.state.cur_vx = 0.0f;
         s_chassis.kine.state.cur_vy = 0.0f;
         s_chassis.kine.state.cur_wz = 0.0f;
@@ -920,19 +911,8 @@ static ChassisErrorCode chassis_prepare_drive_motors(void) {
     return all_ok ? ch.OK : ch.DRIVE_PREPARE_FAILED;
 }
 
-static void chassis_stop_all_drive_motors(void) {
-    uint8_t i;
-
-    for(i = 0u; i < CHASSIS_MODULE_COUNT; ++i) {
-        (void)drive_motor.stop(s_module_map[i].drive_id);
-    }
-}
-
-static bool chassis_maintain_motor_startup(
-    bool steer_feedback_observed,
-    uint8_t steer_missing_mask,
-    bool drive_feedback_observed,
-    uint8_t drive_missing_mask) {
+static bool chassis_maintain_motor_startup(bool steer_feedback_observed, uint8_t steer_missing_mask,
+    bool drive_feedback_observed, uint8_t drive_missing_mask) {
     if(steer_feedback_observed) {
         if(s_chassis.steer_motor_ready == 0u) {
             log_info("CHASSIS steer motor ready");
@@ -1029,11 +1009,13 @@ static float chassis_select_nearest_heading_angle(float current_angle, float tar
     if(!isfinite(current_angle)) {
         current_angle = 0.0f;
     }
+    else if(current_angle > CHASSIS_STEER_POS_LIMIT_RAD || current_angle < -CHASSIS_STEER_POS_LIMIT_RAD) {
+        current_angle = chassis_wrap_pi(current_angle);
+    }
 
     target_angle = chassis_wrap_pi(target_angle);
 
     if(s_chassis.config.steer_target_mode == CHASSIS_STEER_TARGET_WRAP_PI) {
-        /* Wrap mode discards multi-turn continuity and uses the wrapped target directly. */
         return target_angle;
     }
 
