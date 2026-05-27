@@ -18,6 +18,7 @@
 // ! device ! //
 #include "imu/imu.h"
 #include "rgb_led/rgb_led.h"
+#include "gw_gray.h"
 
 // ! domain ! //
 
@@ -28,7 +29,7 @@
 #include "delay.h"
 
 // ! platform ! //
-#include "stm32_hal_light.h"
+
 
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
@@ -105,6 +106,8 @@ static inline void entry_loop(void) {
                 gyro = imu.get_gyro();
                 angle = imu.get_angle();
             }
+
+            gw_gray_update();
         }
     }
 
@@ -126,10 +129,9 @@ static inline void entry_loop(void) {
         }
     }
 
-    if(delay_nb_us(&log_task, 2000 * 1000)) {
+    if(delay_nb_ms(&log_task, 1000)) {
         // log_info("Heartbeat");
-        log_info("light Left: %s, Right: %s", (light_take_triggered() & STM32_HAL_LIGHT_LEFT) ? "ON" : "OFF", (light_take_triggered() & STM32_HAL_LIGHT_RIGHT) ? "ON" : "OFF");
-        // log_vofa(accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, angle.roll, angle.pitch, angle.yaw);
+        log_info("front gray: %u, back gray: %u", gw_gray_get_front_black(), gw_gray_get_back_black());
     }
 }
 
