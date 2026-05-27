@@ -112,6 +112,13 @@ typedef struct {
     float mahony_kp;            /**< Mahony 比例增益，主要影响 roll/pitch 收敛速度 */
     float mahony_ki;            /**< Mahony x/y 轴积分增益，用于慢速零偏修正 */
     float mahony_ki_z;          /**< Mahony z 轴积分增益；六轴无绝对 yaw 参考，通常设为 0 */
+
+    uint8_t static_bias_enable;
+    uint16_t static_bias_samples;
+    float static_gyro_threshold;
+    float static_acc_tolerance;
+    float static_bias_alpha;
+    float static_force_zero_threshold;
 } ImuAttitudeConfig;
 
 /**

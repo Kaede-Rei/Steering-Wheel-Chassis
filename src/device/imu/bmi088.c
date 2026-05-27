@@ -231,20 +231,35 @@ ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, con
     }
 
     config->ops = ops;
+
     config->accel_sen = BMI088_ACCEL_3G_SEN;
     config->gyro_sen = BMI088_GYRO_2000_SEN;
+
     config->accel_int_pin = accel_int_pin;
     config->gyro_int_pin = gyro_int_pin;
+
     config->attitude.mode = IMU_ATTITUDE_MAHONY_6AXIS;
-    config->attitude.gyro_calib_samples = 1000U;
+
+    config->attitude.gyro_calib_samples = 3000U;
+    config->attitude.gyro_calib_var_threshold = 0.0001f;
+
     config->attitude.acc_norm = 9.80665f;
     config->attitude.acc_norm_tolerance = 1.5f;
     config->attitude.max_acc_age_us = 20000U;
-    config->attitude.gyro_calib_var_threshold = 0.01f;
+
     config->attitude.complementary_tau = 0.5f;
+
     config->attitude.mahony_kp = 2.0f;
     config->attitude.mahony_ki = 0.0f;
     config->attitude.mahony_ki_z = 0.0f;
+
+    config->attitude.static_bias_enable = 1U;
+    config->attitude.static_bias_samples = 250U;
+    config->attitude.static_gyro_threshold = 0.03f;
+    config->attitude.static_acc_tolerance = 0.5f;
+    config->attitude.static_bias_alpha = 0.001f;
+    config->attitude.static_force_zero_threshold = 0.006f;
+
     return IMU_STATUS_OK;
 }
 
@@ -459,7 +474,14 @@ static ImuAcc bmi088_get_acc(void) {
  * @brief 获取 BMI088 最近一次缓存的角速度
  */
 static ImuGyro bmi088_get_gyro(void) {
-    return s_bmi088_gyro;
+    ImuGyro gyro = s_bmi088_gyro;
+
+    if(s_bmi088_attitude_enabled != 0U &&
+        imu_attitude_get_gyro(&s_bmi088_attitude, &gyro) == IMU_ATTITUDE_STATUS_OK) {
+        return gyro;
+    }
+
+    return gyro;
 }
 
 /**
