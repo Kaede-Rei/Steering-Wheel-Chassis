@@ -1,6 +1,7 @@
 #include "imu_attitude.h"
 
 #include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 // ! ========================= 变 量 声 明 ========================= ! //
@@ -12,8 +13,8 @@
 
 static float imu_attitude_wrap_pi(float angle);
 static float imu_attitude_acc_norm(const ImuAcc* acc);
-static uint8_t imu_attitude_acc_is_trusted(const ImuAttitude* attitude, const ImuAcc* acc);
-static uint8_t imu_attitude_acc_can_fuse(const ImuAttitude* attitude, const ImuSample* sample, float* acc_norm, uint32_t* acc_age_us);
+static bool imu_attitude_acc_is_trusted(const ImuAttitude* attitude, const ImuAcc* acc);
+static bool imu_attitude_acc_can_fuse(const ImuAttitude* attitude, const ImuSample* sample, float* acc_norm, uint32_t* acc_age_us);
 static void imu_attitude_quat_normalize(ImuQuat* quat);
 static void imu_attitude_quat_from_angle(ImuQuat* quat, const ImuAngle* angle);
 static void imu_attitude_angle_from_quat(ImuAngle* angle, const ImuQuat* quat);
@@ -37,7 +38,7 @@ ImuAttitudeStatus imu_attitude_init(ImuAttitude* attitude, const ImuAttitudeConf
     attitude->quat.w = 1.0f;
 
     if(config->gyro_calib_samples == 0U) {
-        attitude->calibrated = 1U;
+        attitude->calibrated = true;
     }
 
     return IMU_ATTITUDE_STATUS_OK;
@@ -55,14 +56,14 @@ ImuAttitudeStatus imu_attitude_update(ImuAttitude* attitude, const ImuSample* sa
         return IMU_ATTITUDE_STATUS_NOT_READY;
     }
 
-    if(attitude->calibrated == 0U) {
+    if(!attitude->calibrated) {
         return imu_attitude_calibrate_gyro(attitude, sample);
     }
 
     if(attitude->last_update_us == 0U) {
         attitude->last_update_us = sample->gyro_timestamp_us;
 
-        if(attitude->has_angle == 0U && (sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
+        if(!attitude->has_angle && (sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
             imu_attitude_init_angle_by_acc(attitude, &sample->acc);
         }
 
@@ -86,7 +87,7 @@ ImuAttitudeStatus imu_attitude_update(ImuAttitude* attitude, const ImuSample* sa
         return IMU_ATTITUDE_STATUS_ERROR;
     }
 
-    attitude->has_angle = 1U;
+    attitude->has_angle = true;
     return IMU_ATTITUDE_STATUS_OK;
 }
 
@@ -95,7 +96,7 @@ ImuAttitudeStatus imu_attitude_get_angle(const ImuAttitude* attitude, ImuAngle* 
         return IMU_ATTITUDE_STATUS_INVALID_PARAM;
     }
 
-    if(attitude->has_angle == 0U) {
+    if(!attitude->has_angle) {
         return IMU_ATTITUDE_STATUS_NOT_READY;
     }
 
@@ -108,7 +109,7 @@ ImuAttitudeStatus imu_attitude_get_quat(const ImuAttitude* attitude, ImuQuat* qu
         return IMU_ATTITUDE_STATUS_INVALID_PARAM;
     }
 
-    if(attitude->has_angle == 0U) {
+    if(!attitude->has_angle) {
         return IMU_ATTITUDE_STATUS_NOT_READY;
     }
 
@@ -121,7 +122,7 @@ ImuAttitudeStatus imu_attitude_reset_yaw(ImuAttitude* attitude, float yaw) {
         return IMU_ATTITUDE_STATUS_INVALID_PARAM;
     }
 
-    if(attitude->has_angle == 0U) {
+    if(!attitude->has_angle) {
         return IMU_ATTITUDE_STATUS_NOT_READY;
     }
 
@@ -156,22 +157,22 @@ static float imu_attitude_acc_norm(const ImuAcc* acc) {
     return sqrtf(acc->x * acc->x + acc->y * acc->y + acc->z * acc->z);
 }
 
-static uint8_t imu_attitude_acc_is_trusted(const ImuAttitude* attitude, const ImuAcc* acc) {
+static bool imu_attitude_acc_is_trusted(const ImuAttitude* attitude, const ImuAcc* acc) {
     float acc_norm = 0.0f;
 
     if(attitude == 0 || acc == 0) {
-        return 0U;
+        return false;
     }
 
     if(attitude->config.acc_norm <= 0.0f || attitude->config.acc_norm_tolerance < 0.0f) {
-        return 1U;
+        return true;
     }
 
     acc_norm = imu_attitude_acc_norm(acc);
     return fabsf(acc_norm - attitude->config.acc_norm) <= attitude->config.acc_norm_tolerance;
 }
 
-static uint8_t imu_attitude_acc_can_fuse(
+static bool imu_attitude_acc_can_fuse(
     const ImuAttitude* attitude, const ImuSample* sample, float* acc_norm, uint32_t* acc_age_us) {
     uint32_t age_us = 0U;
 
@@ -184,12 +185,12 @@ static uint8_t imu_attitude_acc_can_fuse(
     }
 
     if(attitude == 0 || sample == 0) {
-        return 0U;
+        return false;
     }
 
     if((sample->flags & IMU_SAMPLE_ACC_VALID) == 0U ||
         (sample->flags & IMU_SAMPLE_GYRO_VALID) == 0U) {
-        return 0U;
+        return false;
     }
 
     age_us = sample->gyro_timestamp_us - sample->acc_timestamp_us;
@@ -198,7 +199,7 @@ static uint8_t imu_attitude_acc_can_fuse(
     }
 
     if(attitude->config.max_acc_age_us != 0U && age_us > attitude->config.max_acc_age_us) {
-        return 0U;
+        return false;
     }
 
     if(acc_norm != 0) {
@@ -302,9 +303,9 @@ static void imu_attitude_init_angle_by_acc(ImuAttitude* attitude, const ImuAcc* 
     attitude->acc_filtered = *acc;
     attitude->last_acc_norm = imu_attitude_acc_norm(acc);
     attitude->last_acc_age_us = 0U;
-    attitude->acc_trusted = 1U;
+    attitude->acc_trusted = true;
     imu_attitude_quat_from_angle(&attitude->quat, &attitude->angle);
-    attitude->has_angle = 1U;
+    attitude->has_angle = true;
 }
 
 static void imu_attitude_refresh_angle_by_acc(ImuAttitude* attitude, const ImuAcc* acc) {
@@ -317,16 +318,16 @@ static void imu_attitude_refresh_angle_by_acc(ImuAttitude* attitude, const ImuAc
     attitude->acc_filtered = *acc;
     attitude->last_acc_norm = imu_attitude_acc_norm(acc);
     attitude->last_acc_age_us = 0U;
-    attitude->acc_trusted = 1U;
+    attitude->acc_trusted = true;
     imu_attitude_quat_from_angle(&attitude->quat, &attitude->angle);
-    attitude->has_angle = 1U;
+    attitude->has_angle = true;
 }
 
 static void imu_attitude_integrate_calibrating_yaw(ImuAttitude* attitude, const ImuSample* sample) {
     float dt = 0.0f;
     float bias_z = 0.0f;
 
-    if(attitude == 0 || sample == 0 || attitude->has_angle == 0U) {
+    if(attitude == 0 || sample == 0 || !attitude->has_angle) {
         return;
     }
 
@@ -374,17 +375,17 @@ static ImuAttitudeStatus imu_attitude_calibrate_gyro(ImuAttitude* attitude, cons
         return IMU_ATTITUDE_STATUS_INVALID_PARAM;
     }
 
-    if(attitude->has_angle == 0U && (sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
+    if(!attitude->has_angle && (sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
         imu_attitude_init_angle_by_acc(attitude, &sample->acc);
     }
     imu_attitude_integrate_calibrating_yaw(attitude, sample);
 
     calib_target = attitude->config.gyro_calib_samples;
     if(calib_target == 0U) {
-        attitude->calibrated = 1U;
+        attitude->calibrated = true;
 
         if((sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
-            if(attitude->has_angle == 0U) {
+            if(!attitude->has_angle) {
                 imu_attitude_init_angle_by_acc(attitude, &sample->acc);
             }
             else {
@@ -444,11 +445,11 @@ static ImuAttitudeStatus imu_attitude_calibrate_gyro(ImuAttitude* attitude, cons
     attitude->gyro_bias.x = mean_x;
     attitude->gyro_bias.y = mean_y;
     attitude->gyro_bias.z = mean_z;
-    attitude->calibrated = 1U;
+    attitude->calibrated = true;
     attitude->last_update_us = sample->gyro_timestamp_us;
 
     if((sample->flags & IMU_SAMPLE_ACC_VALID) != 0U) {
-        if(attitude->has_angle == 0U) {
+        if(!attitude->has_angle) {
             imu_attitude_init_angle_by_acc(attitude, &sample->acc);
         }
         else {
@@ -457,7 +458,7 @@ static ImuAttitudeStatus imu_attitude_calibrate_gyro(ImuAttitude* attitude, cons
     }
     else {
         imu_attitude_quat_from_angle(&attitude->quat, &attitude->angle);
-        attitude->has_angle = 1U;
+        attitude->has_angle = true;
     }
 
     return IMU_ATTITUDE_STATUS_CALIBRATING;
@@ -492,7 +493,7 @@ static void imu_attitude_update_complementary(ImuAttitude* attitude, const ImuSa
     attitude->last_acc_norm = acc_norm;
     attitude->last_acc_age_us = acc_age_us;
 
-    if(attitude->acc_trusted != 0U) {
+    if(attitude->acc_trusted) {
         float roll_acc = atan2f(sample->acc.y, sample->acc.z);
         float pitch_acc = atan2f(-sample->acc.x, sqrtf(sample->acc.y * sample->acc.y + sample->acc.z * sample->acc.z));
         float alpha = 0.0f;
@@ -543,7 +544,7 @@ static void imu_attitude_update_mahony(ImuAttitude* attitude, const ImuSample* s
     attitude->last_acc_norm = acc_norm;
     attitude->last_acc_age_us = acc_age_us;
 
-    if(attitude->acc_trusted != 0U && acc_norm > 0.0f) {
+    if(attitude->acc_trusted && acc_norm > 0.0f) {
         ax = sample->acc.x / acc_norm;
         ay = sample->acc.y / acc_norm;
         az = sample->acc.z / acc_norm;

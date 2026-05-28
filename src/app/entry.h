@@ -131,7 +131,8 @@ static inline void entry_loop(void) {
 
     if(delay_nb_ms(&log_task, 1000)) {
         // log_info("Heartbeat");
-        log_info("front gray: %u, back gray: %u", gw_gray_get_front_black(), gw_gray_get_back_black());
+        // log_info("front gray: %u, back gray: %u", gw_gray_get_front_black(), gw_gray_get_back_black());
+        log_vofa(angle.yaw);
     }
 }
 

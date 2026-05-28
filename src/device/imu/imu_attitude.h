@@ -1,6 +1,7 @@
 #ifndef _imu_attitude_h_
 #define _imu_attitude_h_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "imu.h"
@@ -46,9 +47,9 @@ typedef struct {
     uint32_t last_acc_age_us; /**< 最近一次参与融合的加速度相对 gyro 的陈旧时间 */
     uint32_t last_update_us;  /**< 上一次更新的时间戳，单位 us */
     uint16_t calib_count;     /**< 已累计的陀螺校准样本数 */
-    uint8_t calibrated;       /**< 非 0 表示陀螺零偏校准完成 */
-    uint8_t has_angle;        /**< 非 0 表示当前已有可读取姿态 */
-    uint8_t acc_trusted;      /**< 非 0 表示最近一次融合时加速度被认为可信 */
+    bool calibrated;         /**< true 表示陀螺零偏校准完成 */
+    bool has_angle;          /**< true 表示当前已有可读取姿态 */
+    bool acc_trusted;        /**< true 表示最近一次融合时加速度被认为可信 */
 } ImuAttitude;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
