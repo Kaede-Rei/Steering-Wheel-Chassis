@@ -141,7 +141,7 @@ static inline void entry_loop(void) {
         const AttitudeState* att = attitude_get_state();
 
         log_info(
-            "att in=(%.2f,%.2f,%.2f) yaw=%f ref=%f err=%f ctrl_err=%f gz=%f hold=%u manual=%u static=%u latched=%u trim=%f corr=%f out_wz=%f mc=%u sc=%u",
+            "att in=(%.2f,%.2f,%.2f) yaw=%.4f ref=%.4f err=%.4f ctrl_err=%.4f gz=%.4f hold=%u manual=%u static=%u latched=%u trim=%.4f corr=%.4f out_wz=%.4f mc=%u sc=%u",
             att->input_vx,
             att->input_vy,
             att->input_wz,
