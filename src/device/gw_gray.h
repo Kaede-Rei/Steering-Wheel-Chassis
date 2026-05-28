@@ -16,7 +16,7 @@ typedef struct {
     uint8_t front_raw;
     uint8_t back_raw;
 
-    /**
+    /*
      * black_mask 中：
      * bit = 1 表示检测到黑线
      * bit = 0 表示白场

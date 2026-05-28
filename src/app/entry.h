@@ -14,7 +14,6 @@
 #include "assemble/assemble.h"
 #include "chassis.h"
 #include "remote.h"
-#include "attitude.h"
 
 // ! device ! //
 #include "imu/imu.h"
@@ -69,12 +68,8 @@ static inline void entry_init(void) {
     log_info("BOOT chassis init step done");
     delay_ms(100);
 
-    if(assemble_sensor() != SYSTEM_STATUS_OK) return;
-    log_info("BOOT sensor init step done");
-    delay_ms(100);
-
-    if(assemble_attitude() != SYSTEM_STATUS_OK) return;
-    log_info("BOOT attitude init step done");
+    if(assemble_light() != SYSTEM_STATUS_OK) return;
+    log_info("BOOT light init step done");
     delay_ms(100);
 
     if(assemble_remote() != SYSTEM_STATUS_OK) return;
@@ -100,18 +95,17 @@ static inline void entry_loop(void) {
     if(tim6_500hz_flag) {
         tim6_500hz_flag = false;
 
-        if(imu.update() == IMU_STATUS_OK) {
-            accel = imu.get_acc();
-            gyro = imu.get_gyro();
-            angle = imu.get_angle();
-            attitude_update();
-        }
-
         chassis.process();
 
         if(remote++ % 5 == 0) {
             remote_process();
             remote = 0;
+
+            if(imu.update() == IMU_STATUS_OK) {
+                accel = imu.get_acc();
+                gyro = imu.get_gyro();
+                angle = imu.get_angle();
+            }
 
             gw_gray_update();
         }
@@ -137,29 +131,7 @@ static inline void entry_loop(void) {
 
     if(delay_nb_ms(&log_task, 1000)) {
         // log_info("Heartbeat");
-
-        const AttitudeState* att = attitude_get_state();
-
-        log_info(
-            "att in=(%.2f,%.2f,%.2f) yaw=%.4f ref=%.4f err=%.4f ctrl_err=%.4f gz=%.4f hold=%u manual=%u static=%u latched=%u trim=%.4f corr=%.4f out_wz=%.4f mc=%u sc=%u",
-            att->input_vx,
-            att->input_vy,
-            att->input_wz,
-            att->yaw_total,
-            att->yaw_ref,
-            att->yaw_error,
-            att->yaw_error_for_control,
-            att->gyro_z,
-            att->yaw_hold_active,
-            att->manual_rotate_active,
-            att->static_active,
-            att->hold_latched,
-            att->empirical_trim,
-            att->final_wz_correction,
-            att->output_wz,
-            att->manual_count,
-            att->static_count
-        );
+        log_info("front gray: %u, back gray: %u", gw_gray_get_front_black(), gw_gray_get_back_black());
     }
 }
 

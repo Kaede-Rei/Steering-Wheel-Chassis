@@ -2,7 +2,6 @@
 
 #include "chassis.h"
 #include "fs_ia10b.h"
-#include "attitude.h"
 
 #include <string.h>
 
@@ -216,18 +215,12 @@ void remote_process(void) {
     }
 
     if(rc_data.channel[REMOTE_CH_VRB] <= REMOTE_VR_LOW_THRESHOLD) {
-        AttitudeChassisCmd corrected;
-
         speed_limit = remote_get_speed_limit(rc_data.channel[REMOTE_CH_SWB]);
-        s_command.online = true;
-
         s_command.vx = remote_channel_to_norm(rc_data.channel[REMOTE_CH_RIGHT_Y], REMOTE_DEADBAND) * speed_limit.max_vx;
         s_command.vy = -remote_channel_to_norm(rc_data.channel[REMOTE_CH_RIGHT_X], REMOTE_DEADBAND) * speed_limit.max_vy;
         s_command.wz = -remote_channel_to_norm(rc_data.channel[REMOTE_CH_LEFT_X], REMOTE_DEADBAND) * speed_limit.max_wz;
-
-        corrected = attitude_correct_chassis_cmd(s_command.vx, s_command.vy, s_command.wz);
-
-        (void)chassis.set_velocity(corrected.vx, corrected.vy, corrected.wz);
+        s_command.online = true;
+        (void)chassis.set_velocity(s_command.vx, s_command.vy, s_command.wz);
     }
     else {
         s_command.online = true;

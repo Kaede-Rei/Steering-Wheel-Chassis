@@ -19,9 +19,8 @@ SystemStatus assemble_log(void);
 SystemStatus assemble_rgb(void);
 SystemStatus assemble_imu(void);
 SystemStatus assemble_chassis(void);
-SystemStatus assemble_sensor(void);
+SystemStatus assemble_light(void);
 SystemStatus assemble_remote(void);
 SystemStatus assemble_tim6_500hz(void);
-SystemStatus assemble_attitude(void);
 
 #endif

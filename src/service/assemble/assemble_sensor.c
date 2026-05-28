@@ -5,7 +5,7 @@
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
-SystemStatus assemble_sensor(void) {
+SystemStatus assemble_light(void) {
     light_init();
     gw_gray_init();
 
