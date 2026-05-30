@@ -492,7 +492,6 @@ static ImuAttitudeStatus imu_attitude_calibrate_gyro(ImuAttitude* attitude, cons
         attitude->gyro_temp_valid = true;
     }
 
-    // z 轴补偿基线只取配置值，不再依赖本次启动测得的 mean_z 或 temp_ref。
     z_bias_offset = imu_attitude_get_z_bias_offset(attitude);
     attitude->gyro_z_temp_intercept = z_bias_offset;
     attitude->gyro_z_bias_effective = z_bias_offset;
@@ -553,7 +552,6 @@ static ImuGyro imu_attitude_get_corrected_gyro(ImuAttitude* attitude, const ImuS
     temp_comp = imu_attitude_get_temp_comp(attitude, sample);
     bias_z = attitude->gyro_bias.z;
     if(imu_attitude_z_bias_model_enabled(attitude)) {
-        // 固定 z 轴 bias + 当前温度斜率，不使用启动时的 bias/temp_ref 参与补偿。
         bias_z = attitude->gyro_z_temp_intercept + temp_comp.z;
     }
 

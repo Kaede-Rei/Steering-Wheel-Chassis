@@ -260,7 +260,7 @@ ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, con
      * bias_eff_z = gyro_z_bias_offset + gyro_z_temp_coeff * temp
      */
     config->attitude.gyro_z_temp_coeff = 0.000037f;
-    config->attitude.gyro_z_bias_offset = 0.00110f;
+    config->attitude.gyro_z_bias_offset = 0.00090f;
     config->attitude.gyro_z_bias_temp_coeff = 0.0f;
 
     config->attitude.zru_gyro_threshold = 0.015f;
