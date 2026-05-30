@@ -3,6 +3,7 @@
 
 // ! system ! //
 #include <stdbool.h>
+#include <math.h>
 
 
 
@@ -13,7 +14,7 @@
 // ! service ! //
 #include "assemble/assemble.h"
 #include "chassis.h"
-// #include "chassis_yaw_hold.h"
+#include "chassis_yaw_hold.h"
 #include "remote.h"
 
 // ! device ! //
@@ -43,8 +44,6 @@ static ImuGyro gyro = { 0.0f, 0.0f, 0.0f };
 static ImuGyro gyro_bias = { 0.0f, 0.0f, 0.0f };
 static ImuGyro gyro_corrected = { 0.0f, 0.0f, 0.0f };
 static ImuAngle angle = { 0.0f, 0.0f, 0.0f };
-static float temp = 0.0f;
-static Bmi088AttitudeDebug imu_debug = { 0 };
 static uint8_t remote = 0;
 static uint8_t led_state = 0u;
 
@@ -86,9 +85,9 @@ static inline void entry_init(void) {
     log_info("BOOT tim6 500hz init step done");
     delay_ms(100);
 
-    if(assemble_arm() != SYSTEM_STATUS_OK) return;
-    log_info("BOOT arm init step done");
-    delay_ms(100);
+    // if(assemble_arm() != SYSTEM_STATUS_OK) return;
+    // log_info("BOOT arm init step done");
+    // delay_ms(100);
 
     log_info("System initialized successfully");
     delay_ms(500);
@@ -120,8 +119,6 @@ static inline void entry_loop(void) {
             remote = 0;
 
             gw_gray_update();
-
-            bmi088_set_zru_enabled(false);
         }
     }
 
@@ -144,19 +141,10 @@ static inline void entry_loop(void) {
     }
 
     if(delay_nb_ms(&log_task, 1000)) {
-        temp = bmi088_get_temp();
-        (void)bmi088_get_attitude_debug(&imu_debug);
+        float yaw_hold_target_deg = chassis_yaw_hold_get_yaw_ref() * 57.2957795f;
+        float current_yaw_deg = angle.yaw * 57.2957795f;
 
-        float yaw = angle.yaw;
-        float gyro_raw_z = gyro.z;
-        float temp_ref = imu_debug.gyro_temp_ref;
-        float bias_start_z = imu_debug.gyro_bias.z;
-        float bias_a_z = imu_debug.gyro_z_temp_intercept;
-        float bias_eff_z = imu_debug.gyro_z_bias_effective;
-        float temp_comp_z = imu_debug.gyro_temp_comp.z;
-        float corrected_z = imu_debug.gyro_corrected.z;
-
-        log_vofa(yaw, gyro_raw_z, bias_start_z, temp_ref, bias_a_z, bias_eff_z, temp_comp_z, corrected_z, temp);
+        log_vofa(yaw_hold_target_deg, current_yaw_deg);
     }
 }
 

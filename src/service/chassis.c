@@ -72,7 +72,7 @@
  * 单位为 rad；
  * 未进入该误差范围前，驱动速度会被置零以防漂移
  */
-#define CHASSIS_DRIVE_ANGLE_TOL_RAD             0.0628f
+#define CHASSIS_DRIVE_ANGLE_TOL_RAD             0.157f
 /**
  * @brief 驻车刹车流程使用的转向到位误差阈值
  *

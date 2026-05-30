@@ -259,7 +259,7 @@ ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, con
      * 基于冷启动到约 33 C 升温日志的固定拟合：
      * bias_eff_z = gyro_z_bias_offset + gyro_z_temp_coeff * temp
      */
-    config->attitude.gyro_z_temp_coeff = 0.0000382f;
+    config->attitude.gyro_z_temp_coeff = 0.000038f;
     config->attitude.gyro_z_bias_offset = 0.00090f;
     config->attitude.gyro_z_bias_temp_coeff = 0.0f;
 

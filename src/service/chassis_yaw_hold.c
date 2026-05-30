@@ -52,6 +52,7 @@ void chassis_yaw_hold_init(const ChassisYawHoldConfig* config) {
 
 void chassis_yaw_hold_reset(void) {
     s_yaw_hold.active = false;
+    s_yaw_hold.yaw_ref = 0.0f;
     s_yaw_hold.last_yaw_error = 0.0f;
     s_yaw_hold.last_ff_wz = 0.0f;
     s_yaw_hold.last_fb_wz = 0.0f;
@@ -80,19 +81,20 @@ float chassis_yaw_hold_apply(float vx_cmd, float vy_cmd, float wz_cmd, float yaw
     user_translating = fabsf(vx_cmd) > config->v_deadband || fabsf(vy_cmd) > config->v_deadband;
 
     if(user_rotating) {
-        s_yaw_hold.yaw_ref = yaw;
         chassis_yaw_hold_reset();
         return wz_cmd;
     }
 
     if(!user_translating) {
-        s_yaw_hold.yaw_ref = yaw;
-        chassis_yaw_hold_reset();
+        s_yaw_hold.last_yaw_error = 0.0f;
+        s_yaw_hold.last_ff_wz = 0.0f;
+        s_yaw_hold.last_fb_wz = 0.0f;
+        s_yaw_hold.last_output_wz = 0.0f;
         return 0.0f;
     }
 
     if(!s_yaw_hold.active) {
-        s_yaw_hold.yaw_ref = yaw;
+        s_yaw_hold.yaw_ref = 0.0f;
         s_yaw_hold.active = true;
     }
 
