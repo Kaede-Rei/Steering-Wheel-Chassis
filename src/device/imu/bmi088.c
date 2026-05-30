@@ -254,9 +254,14 @@ ImuStatus bmi088_make_config(Bmi088Config* config, const Bmi088PortOps* ops, con
     config->attitude.mahony_ki_z = 0.0f;
     config->attitude.gyro_x_temp_coeff = 0.0f;
     config->attitude.gyro_y_temp_coeff = 0.0f;
-    config->attitude.gyro_z_temp_coeff = 0.000034f;
-    config->attitude.gyro_z_bias_offset = 0.00078f;
-    config->attitude.gyro_z_bias_temp_coeff = -0.000023f;
+
+    /**
+     * 当前参数尽量保持前十分钟冷到热稳定
+     */
+    config->attitude.gyro_z_temp_coeff = 0.000018f;
+    config->attitude.gyro_z_bias_offset = 0.00022f;
+    config->attitude.gyro_z_bias_temp_coeff = 0.0f;
+
     config->attitude.zru_gyro_threshold = 0.015f;
     config->attitude.zru_min_static_us = 1200000U;
     config->attitude.zru_bias_gain = 0.12f;

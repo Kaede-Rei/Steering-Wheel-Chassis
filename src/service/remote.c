@@ -182,11 +182,13 @@ void remote_init(void) {
 
     memset(&s_command, 0, sizeof(s_command));
 
-    yaw_hold_config.kp = 3.0f;
-    yaw_hold_config.kd = 0.08f;
+    yaw_hold_config.kp = 4.5f;
+    yaw_hold_config.kd = 0.12f;
     yaw_hold_config.k_vx = 0.0f;
     yaw_hold_config.k_vy = 0.0f;
-    yaw_hold_config.wz_limit = 0.80f;
+    yaw_hold_config.v_deadband = 0.01f;
+    yaw_hold_config.wz_deadband = 0.08f;
+    yaw_hold_config.wz_limit = 1.20f;
     chassis_yaw_hold_init(&yaw_hold_config);
 }
 
