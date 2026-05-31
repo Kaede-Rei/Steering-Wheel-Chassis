@@ -1,8 +1,15 @@
 #ifndef _APP_REMOTE_H_
 #define _APP_REMOTE_H_
 
+/**
+ * @file remote.h
+ * @brief 遥控应用层接口
+ */
+
 #include <stdbool.h>
 #include <stdint.h>
+
+// ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 /**
  * @brief 遥控应用层输出的底盘命令快照
@@ -16,6 +23,8 @@ typedef struct {
     float wz;      /**< 底盘 z 轴目标角速度，单位 rad/s */
     bool online;   /**< 遥控链路是否在线 */
 } RemoteCommand;
+
+// ! ========================= 接 口 函 数 声 明 ========================= ! //
 
 /**
  * @brief 初始化遥控应用层状态

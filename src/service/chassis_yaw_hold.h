@@ -1,7 +1,14 @@
 #ifndef _CHASSIS_YAW_HOLD_H_
 #define _CHASSIS_YAW_HOLD_H_
 
+/**
+ * @file chassis_yaw_hold.h
+ * @brief 底盘航向保持接口
+ */
+
 #include <stdbool.h>
+
+// ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 /**
  * @brief 底盘航向保持配置
@@ -17,6 +24,8 @@ typedef struct {
     float wz_deadband;  /**< 用户旋转输入死区，单位 rad/s */
     float wz_limit;     /**< 角度环输出限幅，单位 rad/s */
 } ChassisYawHoldConfig;
+
+// ! ========================= 接 口 函 数 声 明 ========================= ! //
 
 /**
  * @brief 获取默认航向保持配置
