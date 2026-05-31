@@ -43,7 +43,7 @@ static const ZhongLingServoConfig servo_config = {
 static const ZhongLingServoPosSpdCmd arm_init_cmds[5] = {
     {.id = 0, .pos_rad = 0.0f, .spd_rad_s = SERVO_SPEED },
     {.id = 1, .pos_rad = 1.884f, .spd_rad_s = SERVO_SPEED },
-    {.id = 2, .pos_rad = 2.268f, .spd_rad_s = SERVO_SPEED },
+    {.id = 2, .pos_rad = 2.355f, .spd_rad_s = SERVO_SPEED },
     {.id = 3, .pos_rad = -1.413f, .spd_rad_s = SERVO_SPEED },
     {.id = 4, .pos_rad = 0.0f, .spd_rad_s = SERVO_SPEED },
 };
