@@ -13,6 +13,7 @@
 #include "assemble/assemble.h"
 #include "chassis.h"
 #include "chassis_yaw_hold.h"
+#include "arm.h"
 
 // ! device ! //
 #include "imu/imu.h"
@@ -90,6 +91,11 @@ static inline void entry_init(void) {
 
     log_info("System initialized successfully");
     delay_ms(500);
+
+    ArmStatus error_code = arm.move_position(0.1f, 0.00f, 0.3f, 3.14f);
+    if(error_code != ARM_OK) {
+        log_error("Failed to move arm to initial position: %s", arm.status_str(error_code));
+    }
 }
 
 /**
@@ -140,20 +146,8 @@ static inline void entry_loop(void) {
     }
 
     if(delay_nb_ms(&log_task, 1000)) {
-        float yaw_hold_target_deg = chassis_yaw_hold_get_yaw_ref() * 57.2957795f;
-        float current_yaw_deg = angle.yaw * 57.2957795f;
-        float yaw_hold_error_deg = chassis_yaw_hold_get_yaw_error() * 57.2957795f;
-        float yaw_hold_output_wz_deg_s = chassis_yaw_hold_get_output_wz() * 57.2957795f;
-        float gyro_z_deg_s = gyro_corrected.z * 57.2957795f;
-        bool yaw_hold_active = chassis_yaw_hold_is_active();
-
-        log_vofa(
-            yaw_hold_target_deg,
-            current_yaw_deg,
-            yaw_hold_error_deg,
-            yaw_hold_output_wz_deg_s,
-            gyro_z_deg_s,
-            yaw_hold_active);
+        FiveDofArmPose arm_pose = arm.get_current_pose() != NULL ? *arm.get_current_pose() : (FiveDofArmPose) { 0 };
+        log_info("Arm Pose: (%.2f, %.2f, %.2f)", arm_pose.position.x, arm_pose.position.y, arm_pose.position.z);
     }
 }
 

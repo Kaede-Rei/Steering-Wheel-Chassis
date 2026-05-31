@@ -1,3 +1,7 @@
+/**
+ * @file serial_arm_kine.c
+ * @brief 通用串联机械臂 MDH/FK/IK 实现
+ */
 #include "serial_arm_kine.h"
 
 #include <math.h>
@@ -5,12 +9,18 @@
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
+/**
+ * @brief 通用串联机械臂统一接口实例
+ */
 const SerialArmKineInterface serial_arm_kine_instance = {
     .model_reset = s_serial_arm_model_reset,
     .model_set_revolute = s_serial_arm_model_set_revolute,
     .model_set_prismatic = s_serial_arm_model_set_prismatic,
+    .model_set_joint_sign = s_serial_arm_model_set_joint_sign,
     .init = s_serial_arm_init,
     .get_task_info = s_serial_arm_get_task_info,
+    .set_task_info = s_serial_arm_set_task_info,
+    .reset_task_info = s_serial_arm_reset_task_info,
     .task_row_name = s_serial_arm_task_row_name,
     .status_str = s_serial_arm_status_str,
     .fk = s_serial_arm_fk,
@@ -23,8 +33,17 @@ const SerialArmKineInterface serial_arm_kine_instance = {
     .pose_from_xyz_rpy = s_serial_arm_pose_from_xyz_rpy,
 };
 
+/**
+ * @brief 当前已加载的串联机械臂模型
+ */
 static SerialArmModel s_model;
+/**
+ * @brief 当前自动推断的 IK 任务行信息
+ */
 static SerialArmTaskInfo s_task;
+/**
+ * @brief 模块是否已完成初始化
+ */
 static bool s_initialized = false;
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
@@ -46,6 +65,12 @@ static void s_compute_full_jacobian(const float q[SERIAL_ARM_MAX_DOF], float J6[
 static void s_auto_select_task_rows(void);
 static bool s_validate_model(const SerialArmModel* model);
 static bool s_validate_joints(const SerialArmJointArray* joints);
+/**
+ * @brief 检查外部传入的 IK 任务行配置是否合法
+ * @param info 目标任务信息
+ * @return bool `true` 表示配置合法
+ */
+static bool s_validate_task_info(const SerialArmTaskInfo* info);
 static bool s_solve_linear(uint8_t n, float A[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_TASK_MAX_DIM],
     float b[SERIAL_ARM_TASK_MAX_DIM], float x[SERIAL_ARM_TASK_MAX_DIM]);
 static bool s_dls_step(const float J[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_MAX_DOF],
@@ -78,6 +103,7 @@ SerialArmStatus s_serial_arm_model_reset(SerialArmModel* model, uint8_t dof, Ser
 
     for(uint8_t i = 0u; i < dof; i++) {
         model->link[i].type = SERIAL_ARM_JOINT_REVOLUTE;
+        model->link[i].q_sign = 1.0f;
         model->link[i].q_min = -M_PI;
         model->link[i].q_max = M_PI;
     }
@@ -97,6 +123,7 @@ SerialArmStatus s_serial_arm_model_set_revolute(SerialArmModel* model, uint8_t i
     model->link[index].a = a;
     model->link[index].alpha = alpha;
     model->link[index].q_offset = q_offset;
+    model->link[index].q_sign = (model->link[index].q_sign == 0.0f) ? 1.0f : model->link[index].q_sign;
     model->link[index].q_min = q_min;
     model->link[index].q_max = q_max;
     return SERIAL_ARM_STATUS_SUCCESS;
@@ -115,8 +142,17 @@ SerialArmStatus s_serial_arm_model_set_prismatic(SerialArmModel* model, uint8_t 
     model->link[index].a = a;
     model->link[index].alpha = alpha;
     model->link[index].q_offset = q_offset;
+    model->link[index].q_sign = (model->link[index].q_sign == 0.0f) ? 1.0f : model->link[index].q_sign;
     model->link[index].q_min = q_min;
     model->link[index].q_max = q_max;
+    return SERIAL_ARM_STATUS_SUCCESS;
+}
+
+SerialArmStatus s_serial_arm_model_set_joint_sign(SerialArmModel* model, uint8_t index, float q_sign) {
+    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF) return SERIAL_ARM_STATUS_INVALID_MODEL;
+
+    model->link[index].q_sign = (q_sign < 0.0f) ? -1.0f : 1.0f;
     return SERIAL_ARM_STATUS_SUCCESS;
 }
 
@@ -132,6 +168,30 @@ SerialArmStatus s_serial_arm_get_task_info(SerialArmTaskInfo* info) {
     if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
     if(info == NULL) return SERIAL_ARM_STATUS_ERROR;
     *info = s_task;
+    return SERIAL_ARM_STATUS_SUCCESS;
+}
+
+/**
+ * @brief 显式设置当前 IK 任务行配置
+ * @param info 目标任务信息
+ * @return SerialArmStatus 运动学状态码
+ */
+SerialArmStatus s_serial_arm_set_task_info(const SerialArmTaskInfo* info) {
+    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_validate_task_info(info)) return SERIAL_ARM_STATUS_INVALID_MODEL;
+
+    s_task = *info;
+    return SERIAL_ARM_STATUS_SUCCESS;
+}
+
+/**
+ * @brief 恢复为按当前自由度自动推断的 IK 任务行配置
+ * @return SerialArmStatus 运动学状态码
+ */
+SerialArmStatus s_serial_arm_reset_task_info(void) {
+    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+
+    s_auto_select_task_rows();
     return SERIAL_ARM_STATUS_SUCCESS;
 }
 
@@ -373,7 +433,8 @@ static void s_tf_mul(const SerialArmTransform* A, const SerialArmTransform* B, S
 static void s_dh_standard_tf(const SerialArmLink* link, float q_user, SerialArmTransform* T) {
     float theta = link->theta;
     float d = link->d;
-    float q = q_user + link->q_offset;
+    float q_sign = (link->q_sign < 0.0f) ? -1.0f : 1.0f;
+    float q = q_sign * q_user + link->q_offset;
     if(link->type == SERIAL_ARM_JOINT_REVOLUTE) theta += q;
     else d += q;
 
@@ -389,7 +450,8 @@ static void s_dh_standard_tf(const SerialArmLink* link, float q_user, SerialArmT
 static void s_dh_modified_tf(const SerialArmLink* link, float q_user, SerialArmTransform* T) {
     float theta = link->theta;
     float d = link->d;
-    float q = q_user + link->q_offset;
+    float q_sign = (link->q_sign < 0.0f) ? -1.0f : 1.0f;
+    float q = q_sign * q_user + link->q_offset;
     if(link->type == SERIAL_ARM_JOINT_REVOLUTE) theta += q;
     else d += q;
 
@@ -630,6 +692,7 @@ static bool s_validate_model(const SerialArmModel* model) {
     for(uint8_t i = 0u; i < model->dof; i++) {
         if(model->link[i].q_min > model->link[i].q_max) return false;
         if(model->link[i].type != SERIAL_ARM_JOINT_REVOLUTE && model->link[i].type != SERIAL_ARM_JOINT_PRISMATIC) return false;
+        if(model->link[i].q_sign == 0.0f) return false;
     }
     return true;
 }
@@ -637,6 +700,23 @@ static bool s_validate_model(const SerialArmModel* model) {
 static bool s_validate_joints(const SerialArmJointArray* joints) {
     if(joints == NULL) return false;
     if(joints->dof != s_model.dof) return false;
+    return true;
+}
+
+static bool s_validate_task_info(const SerialArmTaskInfo* info) {
+    bool used[SERIAL_ARM_TASK_MAX_DIM] = { false };
+
+    if(info == NULL) return false;
+    if(info->task_dim == 0u || info->task_dim > SERIAL_ARM_TASK_MAX_DIM) return false;
+    if(info->task_dim > s_model.dof) return false;
+
+    for(uint8_t i = 0u; i < info->task_dim; i++) {
+        uint8_t row = info->row[i];
+        if(row >= SERIAL_ARM_TASK_MAX_DIM) return false;
+        if(used[row]) return false;
+        used[row] = true;
+    }
+
     return true;
 }
 
