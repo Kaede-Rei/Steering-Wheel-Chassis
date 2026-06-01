@@ -7,7 +7,6 @@ build/
 Drivers/
 external/
 
-.clang-format
 .cproject
 .mxproject
 .project

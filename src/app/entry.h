@@ -53,39 +53,48 @@ static uint8_t led_state = 0u;
  * 负责装配各服务并清零底盘速度命令
  */
 static inline void entry_init(void) {
-    if(assemble_delay() != SYSTEM_STATUS_OK) return;
-    if(assemble_log() != SYSTEM_STATUS_OK) return;
+    if(assemble_delay() != SYSTEM_STATUS_OK)
+        return;
+    if(assemble_log() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT log ready");
     delay_ms(100);
 
-    if(assemble_rgb() != SYSTEM_STATUS_OK) return;
+    if(assemble_rgb() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT rgb init step done");
     delay_ms(100);
 
-    if(assemble_imu() != SYSTEM_STATUS_OK) return;
+    if(assemble_imu() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT imu init step done");
     delay_ms(100);
 
-    if(assemble_chassis() != SYSTEM_STATUS_OK) return;
+    if(assemble_chassis() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT chassis init step done");
     delay_ms(100);
 
-    if(assemble_light() != SYSTEM_STATUS_OK) return;
+    if(assemble_light() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT light init step done");
     delay_ms(100);
 
-    if(assemble_remote() != SYSTEM_STATUS_OK) return;
+    if(assemble_remote() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT remote init step done");
     delay_ms(100);
 
     remote_init();
     chassis_yaw_hold_set_target(0.0f);
 
-    if(assemble_tim6_500hz() != SYSTEM_STATUS_OK) return;
+    if(assemble_tim6_500hz() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT tim6 500hz init step done");
     delay_ms(100);
 
-    if(assemble_arm() != SYSTEM_STATUS_OK) return;
+    if(assemble_arm() != SYSTEM_STATUS_OK)
+        return;
     log_info("BOOT arm init step done");
     delay_ms(100);
 
@@ -134,19 +143,24 @@ static inline void entry_loop(void) {
         const bool remote_online = remote_get_command(&remote_command);
 
         uint8_t target_state = chassis_ready ? 1u : 0u;
-        if(target_state == 1u && remote_online) target_state = 2u;
+        if(target_state == 1u && remote_online)
+            target_state = 2u;
 
         if(led_state != target_state) {
-            if(target_state == 2u) rgb_led.fill(0U, 0U, 255U);
-            else if(target_state == 1u) rgb_led.fill(0U, 255U, 0U);
-            else rgb_led.fill(255U, 0U, 0U);
-            if(rgb_led.show() == RGB_LED_STATUS_OK) led_state = target_state;
+            if(target_state == 2u)
+                rgb_led.fill(0U, 0U, 255U);
+            else if(target_state == 1u)
+                rgb_led.fill(0U, 255U, 0U);
+            else
+                rgb_led.fill(255U, 0U, 0U);
+            if(rgb_led.show() == RGB_LED_STATUS_OK)
+                led_state = target_state;
             log_info("Chassis %s, Remote %s", chassis_ready ? "Ready" : "Not Ready", remote_online ? "Online" : "Offline");
         }
     }
 
     if(delay_nb_ms(&log_task, 1000)) {
-        FiveDofArmPose arm_pose = arm.get_current_pose() != NULL ? *arm.get_current_pose() : (FiveDofArmPose) { 0 };
+        FiveDofArmPose arm_pose = arm.get_current_pose() != NULL ? *arm.get_current_pose() : (FiveDofArmPose){ 0 };
         log_info("Arm Pose: (%.2f, %.2f, %.2f)", arm_pose.position.x, arm_pose.position.y, arm_pose.position.z);
     }
 }

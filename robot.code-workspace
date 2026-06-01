@@ -9,6 +9,15 @@
         "files.autoGuessEncoding": true,
         "C_Cpp.default.configurationProvider": "cl.eide",
         "C_Cpp.errorSquiggles": "disabled",
+        "[c]": {
+            "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+        },
+        "[cpp]": {
+            "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+        },
+        "files.watcherExclude": {
+            "**/build/**": true
+        },
         "files.associations": {
             ".eideignore": "ignore",
             "*.a51": "a51",
