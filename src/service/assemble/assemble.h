@@ -23,5 +23,6 @@ SystemStatus assemble_light(void);
 SystemStatus assemble_remote(void);
 SystemStatus assemble_tim6_500hz(void);
 SystemStatus assemble_arm(void);
+SystemStatus assemble_comms(void);
 
 #endif

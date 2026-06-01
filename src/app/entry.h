@@ -14,6 +14,7 @@
 #include "chassis.h"
 #include "chassis_yaw_hold.h"
 #include "arm.h"
+#include "visual_comms.h"
 
 // ! device ! //
 #include "imu/imu.h"
@@ -85,6 +86,11 @@ static inline void entry_init(void) {
     log_info("BOOT remote init step done");
     delay_ms(100);
 
+    if(assemble_comms() != SYSTEM_STATUS_OK)
+        return;
+    log_info("BOOT visual comms init step done");
+    delay_ms(100);
+
     remote_init();
     chassis_yaw_hold_set_target(0.0f);
 
@@ -114,6 +120,8 @@ static inline void entry_init(void) {
  * 根据定时器事件执行底盘、遥控、IMU 和日志任务
  */
 static inline void entry_loop(void) {
+    visual_comms.process();
+
     // ! 事件驱动任务 ! //
     if(tim6_500hz_flag) {
         tim6_500hz_flag = false;
