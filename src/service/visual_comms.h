@@ -2,7 +2,6 @@
 #define _visual_comms_h_
 
 #include <stdbool.h>
-#include <stdint.h>
 
 #include "main.h" // IWYU pragma: keep
 

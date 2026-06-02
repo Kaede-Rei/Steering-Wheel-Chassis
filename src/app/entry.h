@@ -120,9 +120,9 @@ static inline void entry_init(void) {
  * 根据定时器事件执行底盘、遥控、IMU 和日志任务
  */
 static inline void entry_loop(void) {
+    // ! 事件驱动任务 ! //
     visual_comms.process();
 
-    // ! 事件驱动任务 ! //
     if(tim6_500hz_flag) {
         tim6_500hz_flag = false;
 

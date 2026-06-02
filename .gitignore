@@ -3,9 +3,11 @@ Core/Startup/
 Core/Src/*
 !Core/Src/main.c
 
+.omo/
 build/
 Drivers/
 external/
+competition/
 
 .cproject
 .mxproject
