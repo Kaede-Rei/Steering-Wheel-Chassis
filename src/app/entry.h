@@ -14,6 +14,7 @@
 #include "chassis.h"
 #include "chassis_yaw_hold.h"
 #include "arm.h"
+#include "line_sensor.h"
 #include "visual_comms.h"
 
 // ! device ! //
@@ -141,6 +142,7 @@ static inline void entry_loop(void) {
             remote_tick = 0;
 
             gw_gray_update();
+            line_sensor_update();
         }
     }
 
