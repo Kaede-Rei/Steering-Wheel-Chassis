@@ -3,30 +3,30 @@
 #include <math.h>
 #include <string.h>
 
+#include "log.h"
 #include "protocol_parser.h"
 #include "stm32_hal_uart.h"
 
 // ! ========================= 常 量 / 宏 声 明 ========================= ! //
 
-#define VISUAL_CTRL_FRAME_LENGTH 8u
-#define VISUAL_COORD_FRAME_LENGTH 16u
+#define VISUAL_SHORT_FRAME_LENGTH 8u
+#define VISUAL_RECOGNITION_FRAME_LENGTH 20u
 #define VISUAL_RX_RING_BUFFER_SIZE 64u
+#define VISUAL_MAX_FRAME_LENGTH VISUAL_RECOGNITION_FRAME_LENGTH
+#define VISUAL_RECOGNITION_RESERVED_FLAG_MASK 0xF8u
 
 // ! ========================= 私 有 变 量 / Typedef 声 明 ========================= ! //
 
 typedef enum {
     VISUAL_FRAME_NONE = 0,
-    VISUAL_FRAME_CONTROL,
-    VISUAL_FRAME_COORDINATE,
+    VISUAL_FRAME_SHORT,
+    VISUAL_FRAME_RECOGNITION,
 } VisualFrameType;
 
-static const uint8_t s_control_header[2] = { 0xAAu, 0x55u };
-static const uint8_t s_control_tail[2] = { 0x55u, 0xAAu };
-static const uint8_t s_coordinate_header[2] = { 0xBBu, 0x66u };
-static const uint8_t s_coordinate_tail[2] = { 0x66u, 0xBBu };
-static const uint8_t s_coordinate_ack_success[VISUAL_CTRL_FRAME_LENGTH] = { 0xAAu, 0x55u, 0x02u, 0x00u, 0x00u, 0x00u, 0x55u, 0xAAu };
-static const uint8_t s_coordinate_ack_failed[VISUAL_CTRL_FRAME_LENGTH] = { 0xAAu, 0x55u, 0x02u, 0x01u, 0x00u, 0x00u, 0x55u, 0xAAu };
-static const uint8_t s_end_task_notify[VISUAL_CTRL_FRAME_LENGTH] = { 0xAAu, 0x55u, 0x03u, 0x00u, 0x00u, 0x00u, 0x55u, 0xAAu };
+static const uint8_t s_short_header[2] = { 0xAAu, 0x55u };
+static const uint8_t s_short_tail[2] = { 0x55u, 0xAAu };
+static const uint8_t s_recognition_header[2] = { 0xBBu, 0x66u };
+static const uint8_t s_recognition_tail[2] = { 0x66u, 0xBBu };
 
 static VisualComms s_visual_comms = { 0 };
 static VisualComms s_visual_comms_view = { 0 };
@@ -34,12 +34,10 @@ static UART_HandleTypeDef* s_visual_uart = NULL;
 static RingBuf s_visual_rx_ring = { 0 };
 static uint8_t s_visual_rx_ring_storage[VISUAL_RX_RING_BUFFER_SIZE] = { 0 };
 static uint8_t s_visual_rx_byte = 0u;
-static uint8_t s_frame_buffer[VISUAL_COORD_FRAME_LENGTH] = { 0 };
+static uint8_t s_frame_buffer[VISUAL_MAX_FRAME_LENGTH] = { 0 };
 static uint8_t s_frame_length = 0u;
 static uint8_t s_expected_length = 0u;
 static VisualFrameType s_frame_type = VISUAL_FRAME_NONE;
-static volatile bool s_pending_ack = false;
-static volatile bool s_pending_ack_success = false;
 static uint32_t s_protocol_parser_primask = 0u;
 
 const struct VisualCommsInterface visual_comms_interface = {
@@ -49,9 +47,17 @@ const struct VisualCommsInterface visual_comms_interface = {
     .init = visual_comms_init,
     .process = visual_comms_process,
     .consume_command = visual_comms_consume_command,
-    .consume_coordinate = visual_comms_consume_coordinate,
-    .send_coordinate_ack = visual_comms_send_coordinate_ack,
-    .send_end_task = visual_comms_send_end_task,
+    .consume_recognition = visual_comms_consume_recognition,
+    .consume_uav_handoff_ack = visual_comms_consume_uav_handoff_ack,
+    .send_scan_request = visual_comms_send_scan_request,
+    .send_voice_event = visual_comms_send_voice_event,
+    .send_mission_event = visual_comms_send_mission_event,
+    .send_uav_handoff_request = visual_comms_send_uav_handoff_request,
+    .send_ack_ok = visual_comms_send_ack_ok,
+    .send_ack_err = visual_comms_send_ack_err,
+    .recognition_is_stale = visual_comms_recognition_is_stale,
+    .recognition_has_pose = visual_comms_recognition_has_pose,
+    .recognition_retry_suggested = visual_comms_recognition_retry_suggested,
     .is_ready = visual_comms_is_ready,
     .get_state = visual_comms_get_state,
     .status_str = visual_comms_status_str,
@@ -68,39 +74,30 @@ static bool s_try_start_frame(uint8_t byte);
 static void s_reset_frame(void);
 static bool s_tail_matches(const uint8_t* frame, const uint8_t* tail, uint8_t frame_length);
 static VisualCommsStatus s_handle_complete_frame(void);
-static VisualCommsStatus s_handle_control_frame(void);
-static VisualCommsStatus s_handle_coordinate_frame(void);
+static VisualCommsStatus s_handle_short_frame(void);
+static VisualCommsStatus s_handle_recognition_frame(void);
+static bool s_is_valid_zone(uint8_t zone);
+static bool s_is_valid_flower_sex(uint8_t sex);
+static bool s_is_valid_uav_handoff_status(uint8_t status);
 static float s_decode_float_le(const uint8_t* data);
+static VisualCommsStatus s_send_args_frame(MissionFrameType type, uint8_t arg0, uint8_t arg1, uint8_t arg2);
 static VisualCommsStatus s_send_frame(const uint8_t* data, uint16_t len);
+static void s_mark_malformed_frame(const char* reason, uint8_t type);
 static void s_sync_view(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
-/**
- * @brief 为 `protocol_parser` 提供临界区入口实现
- *
- * 当前视觉通信服务复用了 `infra/protocol_parser.*` 中的环形缓冲区能力，
- * 因此在本文件内提供该模块要求的临界区钩子
- */
 void protocol_parser_enter_critical(void) {
     s_protocol_parser_primask = __get_PRIMASK();
     __disable_irq();
 }
 
-/**
- * @brief 为 `protocol_parser` 提供临界区出口实现
- */
 void protocol_parser_exit_critical(void) {
     if(s_protocol_parser_primask == 0u) {
         __enable_irq();
     }
 }
 
-/**
- * @brief 初始化视觉通信服务
- * @param huart 视觉模块使用的串口句柄，当前预期传入 `&huart10`
- * @return VisualCommsStatus 状态码
- */
 VisualCommsStatus visual_comms_init(UART_HandleTypeDef* huart) {
     if(huart == NULL) {
         return VISUAL_COMMS_INVALID_PARAM;
@@ -128,26 +125,12 @@ VisualCommsStatus visual_comms_init(UART_HandleTypeDef* huart) {
     return VISUAL_COMMS_OK;
 }
 
-/**
- * @brief 处理当前已接收的视觉串口数据
- * @return VisualCommsStatus 状态码
- */
 VisualCommsStatus visual_comms_process(void) {
     uint8_t byte = 0u;
     VisualCommsStatus status = VISUAL_COMMS_OK;
 
     if(s_visual_comms.initialized == false) {
         return VISUAL_COMMS_NOT_INITIALIZED;
-    }
-
-    if(s_pending_ack) {
-        const bool success = s_pending_ack_success;
-        s_pending_ack = false;
-        s_pending_ack_success = false;
-        status = visual_comms_send_coordinate_ack(success);
-        if(status != VISUAL_COMMS_OK) {
-            return status;
-        }
     }
 
     while(ring_buf.read(&s_visual_rx_ring, &byte) == RING_BUF_SUCCESS) {
@@ -160,88 +143,118 @@ VisualCommsStatus visual_comms_process(void) {
     return VISUAL_COMMS_OK;
 }
 
-/**
- * @brief 取走一条待处理控制命令
- * @param command 输出参数，用于接收命令类型
- * @return true 成功取到一条新命令
- * @return false 当前无新命令或参数无效
- */
-bool visual_comms_consume_command(VisualCommand* command) {
+bool visual_comms_consume_command(MissionCommand* command) {
     if(s_visual_comms.initialized == false || command == NULL) {
         return false;
     }
-    if(s_visual_comms.pending_command == VISUAL_CMD_NONE) {
+    if(s_visual_comms.pending_command == MISSION_COMMAND_NONE) {
         return false;
     }
 
     *command = s_visual_comms.pending_command;
     s_visual_comms.current_command = s_visual_comms.pending_command;
-    s_visual_comms.pending_command = VISUAL_CMD_NONE;
+    s_visual_comms.pending_command = MISSION_COMMAND_NONE;
     s_sync_view();
     return true;
 }
 
-/**
- * @brief 取走一组新坐标
- * @param coordinate 输出参数，用于接收坐标值
- * @return true 成功取到一组新坐标
- * @return false 当前无新坐标或参数无效
- */
-bool visual_comms_consume_coordinate(VisualCoordinate* coordinate) {
-    if(s_visual_comms.initialized == false || coordinate == NULL) {
+bool visual_comms_consume_recognition(MissionRecognitionResult* result) {
+    if(s_visual_comms.initialized == false || result == NULL) {
         return false;
     }
-    if(s_visual_comms.has_new_coordinate == false) {
+    if(s_visual_comms.has_new_recognition == false) {
         return false;
     }
 
-    *coordinate = s_visual_comms.latest_coordinate;
-    s_visual_comms.has_new_coordinate = false;
+    *result = s_visual_comms.latest_recognition;
+    s_visual_comms.has_new_recognition = false;
     s_sync_view();
     return true;
 }
 
-/**
- * @brief 发送坐标接收应答
- * @param success true 发送成功应答，false 发送失败应答
- * @return VisualCommsStatus 状态码
- */
-VisualCommsStatus visual_comms_send_coordinate_ack(bool success) {
-    const uint8_t* frame = success ? s_coordinate_ack_success : s_coordinate_ack_failed;
-    return s_send_frame(frame, VISUAL_CTRL_FRAME_LENGTH);
+bool visual_comms_consume_uav_handoff_ack(MissionUavHandoffAck* ack) {
+    if(s_visual_comms.initialized == false || ack == NULL) {
+        return false;
+    }
+    if(s_visual_comms.has_new_uav_handoff_ack == false) {
+        return false;
+    }
+
+    *ack = s_visual_comms.latest_uav_handoff_ack;
+    s_visual_comms.has_new_uav_handoff_ack = false;
+    s_sync_view();
+    return true;
 }
 
-/**
- * @brief 发送任务结束通知
- * @return VisualCommsStatus 状态码
- */
-VisualCommsStatus visual_comms_send_end_task(void) {
-    return s_send_frame(s_end_task_notify, VISUAL_CTRL_FRAME_LENGTH);
+VisualCommsStatus visual_comms_send_scan_request(MissionZoneId zone, uint8_t target_index, uint8_t retry_count) {
+    if(s_is_valid_zone((uint8_t)zone) == false || zone == MISSION_ZONE_NONE) {
+        return VISUAL_COMMS_INVALID_PARAM;
+    }
+
+    return s_send_args_frame(MISSION_FRAME_TYPE_SCAN_REQUEST, (uint8_t)zone, target_index, retry_count);
 }
 
-/**
- * @brief 查询视觉通信服务是否已经完成初始化
- * @return true 服务可用
- * @return false 服务尚未初始化
- */
+VisualCommsStatus visual_comms_send_voice_event(MissionVoiceEventId event_id, MissionZoneId zone, uint8_t sex_or_result) {
+    if(zone != MISSION_ZONE_NONE && s_is_valid_zone((uint8_t)zone) == false) {
+        return VISUAL_COMMS_INVALID_PARAM;
+    }
+
+    return s_send_args_frame(MISSION_FRAME_TYPE_VOICE_EVENT, (uint8_t)event_id, (uint8_t)zone, sex_or_result);
+}
+
+VisualCommsStatus visual_comms_send_mission_event(MissionPhase phase_id, MissionZoneId zone, MissionRunResult run_status) {
+    if(zone != MISSION_ZONE_NONE && s_is_valid_zone((uint8_t)zone) == false) {
+        return VISUAL_COMMS_INVALID_PARAM;
+    }
+
+    return s_send_args_frame(MISSION_FRAME_TYPE_MISSION_EVENT, (uint8_t)phase_id, (uint8_t)zone, (uint8_t)run_status);
+}
+
+VisualCommsStatus visual_comms_send_uav_handoff_request(uint8_t handoff_step) {
+    return s_send_args_frame(MISSION_FRAME_TYPE_UAV_HANDOFF_REQUEST, (uint8_t)MISSION_ZONE_D, handoff_step, 0u);
+}
+
+VisualCommsStatus visual_comms_send_ack_ok(void) {
+    return s_send_args_frame(MISSION_FRAME_TYPE_ACK_OK, 0u, 0u, 0u);
+}
+
+VisualCommsStatus visual_comms_send_ack_err(void) {
+    return s_send_args_frame(MISSION_FRAME_TYPE_ACK_ERR, 0u, 0u, 0u);
+}
+
+bool visual_comms_recognition_is_stale(const MissionRecognitionResult* result) {
+    if(result == NULL) {
+        return false;
+    }
+
+    return (result->flags & MISSION_RECOGNITION_FLAG_STALE) != 0u;
+}
+
+bool visual_comms_recognition_has_pose(const MissionRecognitionResult* result) {
+    if(result == NULL) {
+        return false;
+    }
+
+    return (result->flags & MISSION_RECOGNITION_FLAG_POSE_VALID) != 0u;
+}
+
+bool visual_comms_recognition_retry_suggested(const MissionRecognitionResult* result) {
+    if(result == NULL) {
+        return false;
+    }
+
+    return (result->flags & MISSION_RECOGNITION_FLAG_RETRY_SUGGESTED) != 0u;
+}
+
 bool visual_comms_is_ready(void) {
     return s_visual_comms.initialized;
 }
 
-/**
- * @brief 获取视觉通信服务只读状态视图
- * @return const VisualComms* 只读状态快照指针
- */
 const VisualComms* visual_comms_get_state(void) {
     s_sync_view();
     return &s_visual_comms_view;
 }
 
-/**
- * @brief 将视觉通信服务状态码转换为静态字符串
- * @param status 状态码
- * @return const char* 状态码名称
- */
 const char* visual_comms_status_str(VisualCommsStatus status) {
     switch(status) {
 #define X(name, str)          \
@@ -256,30 +269,18 @@ const char* visual_comms_status_str(VisualCommsStatus status) {
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
-/**
- * @brief UART 单字节接收完成回调
- *
- * 该回调仅负责把字节写入内部环形缓冲区，并重新启动下一字节接收；
- * 不在中断中执行阻塞串口发送
- */
 static void s_uart_rx_complete(void) {
     if(s_visual_comms.initialized == false) {
         return;
     }
 
     if(s_write_byte_to_ring(s_visual_rx_byte) != VISUAL_COMMS_OK) {
-        s_pending_ack = true;
-        s_pending_ack_success = false;
+        s_mark_malformed_frame("rx-ring-overflow", 0u);
     }
 
     (void)s_restart_receive();
 }
 
-/**
- * @brief UART 错误回调
- *
- * 当前策略为中止接收并立即重启单字节中断接收
- */
 static void s_uart_error(void) {
     if(s_visual_uart == NULL) {
         return;
@@ -289,11 +290,6 @@ static void s_uart_error(void) {
     (void)s_restart_receive();
 }
 
-/**
- * @brief 重新启动 UART 单字节中断接收
- * @return true 启动成功
- * @return false 启动失败
- */
 static bool s_restart_receive(void) {
     if(s_visual_uart == NULL) {
         return false;
@@ -302,11 +298,6 @@ static bool s_restart_receive(void) {
     return uart_receive_it(s_visual_uart, &s_visual_rx_byte, 1u);
 }
 
-/**
- * @brief 将一个接收到的字节写入内部环形缓冲区
- * @param byte 待写入字节
- * @return VisualCommsStatus 状态码
- */
 static VisualCommsStatus s_write_byte_to_ring(uint8_t byte) {
     if(ring_buf.write(&s_visual_rx_ring, byte) != RING_BUF_SUCCESS) {
         return VISUAL_COMMS_RING_BUFFER_ERROR;
@@ -315,11 +306,6 @@ static VisualCommsStatus s_write_byte_to_ring(uint8_t byte) {
     return VISUAL_COMMS_OK;
 }
 
-/**
- * @brief 处理单个串口字节并推进内部帧状态机
- * @param byte 待处理字节
- * @return VisualCommsStatus 状态码
- */
 static VisualCommsStatus s_process_byte(uint8_t byte) {
     if(s_frame_length == 0u) {
         (void)s_try_start_frame(byte);
@@ -327,7 +313,7 @@ static VisualCommsStatus s_process_byte(uint8_t byte) {
     }
 
     if(s_frame_length == 1u) {
-        const uint8_t expected_header_byte = (s_frame_type == VISUAL_FRAME_CONTROL) ? s_control_header[1] : s_coordinate_header[1];
+        const uint8_t expected_header_byte = (s_frame_type == VISUAL_FRAME_SHORT) ? s_short_header[1] : s_recognition_header[1];
         if(byte != expected_header_byte) {
             s_reset_frame();
             (void)s_try_start_frame(byte);
@@ -343,35 +329,26 @@ static VisualCommsStatus s_process_byte(uint8_t byte) {
     return s_handle_complete_frame();
 }
 
-/**
- * @brief 尝试以当前字节作为新帧帧头开始解析
- * @param byte 当前输入字节
- * @return true 已识别为某类帧头首字节并启动收帧
- * @return false 当前字节不构成已知帧头
- */
 static bool s_try_start_frame(uint8_t byte) {
-    if(byte == s_control_header[0]) {
+    if(byte == s_short_header[0]) {
         s_frame_buffer[0] = byte;
         s_frame_length = 1u;
-        s_expected_length = VISUAL_CTRL_FRAME_LENGTH;
-        s_frame_type = VISUAL_FRAME_CONTROL;
+        s_expected_length = VISUAL_SHORT_FRAME_LENGTH;
+        s_frame_type = VISUAL_FRAME_SHORT;
         return true;
     }
 
-    if(byte == s_coordinate_header[0]) {
+    if(byte == s_recognition_header[0]) {
         s_frame_buffer[0] = byte;
         s_frame_length = 1u;
-        s_expected_length = VISUAL_COORD_FRAME_LENGTH;
-        s_frame_type = VISUAL_FRAME_COORDINATE;
+        s_expected_length = VISUAL_RECOGNITION_FRAME_LENGTH;
+        s_frame_type = VISUAL_FRAME_RECOGNITION;
         return true;
     }
 
     return false;
 }
 
-/**
- * @brief 复位当前正在接收的临时帧状态
- */
 static void s_reset_frame(void) {
     memset(s_frame_buffer, 0, sizeof(s_frame_buffer));
     s_frame_length = 0u;
@@ -379,109 +356,124 @@ static void s_reset_frame(void) {
     s_frame_type = VISUAL_FRAME_NONE;
 }
 
-/**
- * @brief 检查一帧数据的帧尾是否符合预期
- * @param frame 完整帧缓冲区
- * @param tail 目标帧尾
- * @param frame_length 帧长
- * @return true 帧尾匹配
- * @return false 帧尾不匹配
- */
 static bool s_tail_matches(const uint8_t* frame, const uint8_t* tail, uint8_t frame_length) {
     return frame[frame_length - 2u] == tail[0] && frame[frame_length - 1u] == tail[1];
 }
 
-/**
- * @brief 处理一帧已收满的完整数据
- * @return VisualCommsStatus 状态码
- */
 static VisualCommsStatus s_handle_complete_frame(void) {
-    VisualCommsStatus status;
+    VisualCommsStatus status = VISUAL_COMMS_OK;
 
-    if(s_frame_type == VISUAL_FRAME_CONTROL) {
-        if(s_frame_buffer[0] != s_control_header[0] || s_frame_buffer[1] != s_control_header[1] ||
-           s_tail_matches(s_frame_buffer, s_control_tail, VISUAL_CTRL_FRAME_LENGTH) == false) {
+    if(s_frame_type == VISUAL_FRAME_SHORT) {
+        if(s_frame_buffer[0] != s_short_header[0] || s_frame_buffer[1] != s_short_header[1] ||
+           s_tail_matches(s_frame_buffer, s_short_tail, VISUAL_SHORT_FRAME_LENGTH) == false) {
+            s_mark_malformed_frame("bad-short-frame", s_frame_buffer[2]);
             s_reset_frame();
             return VISUAL_COMMS_FRAME_ERROR;
         }
+
+        status = s_handle_short_frame();
     }
-    else if(s_frame_type == VISUAL_FRAME_COORDINATE) {
-        if(s_frame_buffer[0] != s_coordinate_header[0] || s_frame_buffer[1] != s_coordinate_header[1] ||
-           s_tail_matches(s_frame_buffer, s_coordinate_tail, VISUAL_COORD_FRAME_LENGTH) == false) {
+    else if(s_frame_type == VISUAL_FRAME_RECOGNITION) {
+        if(s_frame_buffer[0] != s_recognition_header[0] || s_frame_buffer[1] != s_recognition_header[1] ||
+           s_tail_matches(s_frame_buffer, s_recognition_tail, VISUAL_RECOGNITION_FRAME_LENGTH) == false) {
+            s_mark_malformed_frame("bad-recognition-frame", s_frame_buffer[2]);
             s_reset_frame();
-            s_pending_ack = true;
-            s_pending_ack_success = false;
             return VISUAL_COMMS_FRAME_ERROR;
         }
+
+        status = s_handle_recognition_frame();
     }
     else {
+        s_mark_malformed_frame("unknown-frame-type", 0u);
         s_reset_frame();
         return VISUAL_COMMS_FRAME_ERROR;
-    }
-
-    if(s_frame_type == VISUAL_FRAME_CONTROL) {
-        status = s_handle_control_frame();
-    }
-    else {
-        status = s_handle_coordinate_frame();
     }
 
     s_reset_frame();
     return status;
 }
 
-/**
- * @brief 解析并处理 8 字节控制帧
- * @return VisualCommsStatus 状态码
- */
-static VisualCommsStatus s_handle_control_frame(void) {
-    if(s_frame_buffer[2] != 0x01u || s_frame_buffer[4] != 0x00u || s_frame_buffer[5] != 0x00u) {
+static VisualCommsStatus s_handle_short_frame(void) {
+    const MissionFrameType type = (MissionFrameType)s_frame_buffer[2];
+
+    switch(type) {
+        case MISSION_FRAME_TYPE_START:
+        case MISSION_FRAME_TYPE_STOP:
+        case MISSION_FRAME_TYPE_ESTOP:
+        case MISSION_FRAME_TYPE_RESET:
+            if(s_frame_buffer[3] != 0u || s_frame_buffer[4] != 0u || s_frame_buffer[5] != 0u) {
+                s_mark_malformed_frame("control-command-payload", (uint8_t)type);
+                return VISUAL_COMMS_FRAME_ERROR;
+            }
+
+            s_visual_comms.pending_command = (MissionCommand)type;
+            s_sync_view();
+            return VISUAL_COMMS_OK;
+
+        case MISSION_FRAME_TYPE_UAV_HANDOFF_ACK:
+            if(s_frame_buffer[5] != 0u || s_is_valid_uav_handoff_status(s_frame_buffer[3]) == false) {
+                s_mark_malformed_frame("uav-handoff-ack", (uint8_t)type);
+                return VISUAL_COMMS_FRAME_ERROR;
+            }
+
+            s_visual_comms.latest_uav_handoff_ack.status = (MissionUavHandoffStatus)s_frame_buffer[3];
+            s_visual_comms.latest_uav_handoff_ack.detail = s_frame_buffer[4];
+            s_visual_comms.has_new_uav_handoff_ack = true;
+            s_sync_view();
+            return VISUAL_COMMS_OK;
+
+        default:
+            s_mark_malformed_frame("unsupported-short-frame-type", (uint8_t)type);
+            return VISUAL_COMMS_FRAME_ERROR;
+    }
+}
+
+static VisualCommsStatus s_handle_recognition_frame(void) {
+    MissionRecognitionResult result;
+
+    result.zone = (MissionZoneId)s_frame_buffer[2];
+    result.sex = (FlowerSex)s_frame_buffer[3];
+    result.confidence = s_frame_buffer[4];
+    result.flags = s_frame_buffer[5];
+    result.pose.x = s_decode_float_le(&s_frame_buffer[6]);
+    result.pose.y = s_decode_float_le(&s_frame_buffer[10]);
+    result.pose.z = s_decode_float_le(&s_frame_buffer[14]);
+
+    if(s_is_valid_zone((uint8_t)result.zone) == false ||
+       s_is_valid_flower_sex((uint8_t)result.sex) == false ||
+       (result.flags & VISUAL_RECOGNITION_RESERVED_FLAG_MASK) != 0u ||
+       isfinite(result.pose.x) == 0 || isfinite(result.pose.y) == 0 || isfinite(result.pose.z) == 0) {
+        s_mark_malformed_frame("recognition-payload", (uint8_t)MISSION_FRAME_TYPE_SCAN_REQUEST);
         return VISUAL_COMMS_FRAME_ERROR;
     }
 
-    if(s_frame_buffer[3] == 0x01u) {
-        s_visual_comms.pending_command = VISUAL_CMD_START_RECOGNIZE_A;
-    }
-    else if(s_frame_buffer[3] == 0x02u) {
-        s_visual_comms.pending_command = VISUAL_CMD_START_RECOGNIZE_B;
-    }
-    else {
-        return VISUAL_COMMS_FRAME_ERROR;
-    }
-
+    s_visual_comms.latest_recognition = result;
+    s_visual_comms.has_new_recognition = true;
     s_sync_view();
     return VISUAL_COMMS_OK;
 }
 
-/**
- * @brief 解析并处理 16 字节坐标帧
- * @return VisualCommsStatus 状态码
- */
-static VisualCommsStatus s_handle_coordinate_frame(void) {
-    VisualCoordinate coordinate;
-
-    coordinate.x = s_decode_float_le(&s_frame_buffer[2]);
-    coordinate.y = s_decode_float_le(&s_frame_buffer[6]);
-    coordinate.z = s_decode_float_le(&s_frame_buffer[10]);
-
-    if(isfinite(coordinate.x) == 0 || isfinite(coordinate.y) == 0 || isfinite(coordinate.z) == 0) {
-        s_pending_ack = true;
-        s_pending_ack_success = false;
-        return VISUAL_COMMS_FRAME_ERROR;
-    }
-
-    s_visual_comms.latest_coordinate = coordinate;
-    s_visual_comms.has_new_coordinate = true;
-    s_sync_view();
-
-    return visual_comms_send_coordinate_ack(true);
+static bool s_is_valid_zone(uint8_t zone) {
+    return zone == (uint8_t)MISSION_ZONE_A ||
+           zone == (uint8_t)MISSION_ZONE_B ||
+           zone == (uint8_t)MISSION_ZONE_C ||
+           zone == (uint8_t)MISSION_ZONE_D ||
+           zone == (uint8_t)MISSION_ZONE_HOME;
 }
 
-/**
- * @brief 将 4 字节小端数据解码为 `float`
- * @param data 指向 4 字节小端浮点数据
- * @return float 解码后的浮点值
- */
+static bool s_is_valid_flower_sex(uint8_t sex) {
+    return sex == (uint8_t)FLOWER_SEX_UNKNOWN ||
+           sex == (uint8_t)FLOWER_SEX_FEMALE ||
+           sex == (uint8_t)FLOWER_SEX_MALE ||
+           sex == (uint8_t)FLOWER_SEX_HERMAPHRODITE;
+}
+
+static bool s_is_valid_uav_handoff_status(uint8_t status) {
+    return status == (uint8_t)MISSION_UAV_HANDOFF_SUCCESS ||
+           status == (uint8_t)MISSION_UAV_HANDOFF_BUSY_RETRYABLE ||
+           status == (uint8_t)MISSION_UAV_HANDOFF_FAIL_TERMINAL;
+}
+
 static float s_decode_float_le(const uint8_t* data) {
     union {
         uint32_t u32;
@@ -495,12 +487,21 @@ static float s_decode_float_le(const uint8_t* data) {
     return converter.f32;
 }
 
-/**
- * @brief 通过视觉串口发送一帧完整数据
- * @param data 待发送帧缓冲区
- * @param len 帧长度
- * @return VisualCommsStatus 状态码
- */
+static VisualCommsStatus s_send_args_frame(MissionFrameType type, uint8_t arg0, uint8_t arg1, uint8_t arg2) {
+    const uint8_t frame[VISUAL_SHORT_FRAME_LENGTH] = {
+        s_short_header[0],
+        s_short_header[1],
+        (uint8_t)type,
+        arg0,
+        arg1,
+        arg2,
+        s_short_tail[0],
+        s_short_tail[1],
+    };
+
+    return s_send_frame(frame, VISUAL_SHORT_FRAME_LENGTH);
+}
+
 static VisualCommsStatus s_send_frame(const uint8_t* data, uint16_t len) {
     if(s_visual_comms.initialized == false) {
         return VISUAL_COMMS_NOT_INITIALIZED;
@@ -515,9 +516,15 @@ static VisualCommsStatus s_send_frame(const uint8_t* data, uint16_t len) {
     return VISUAL_COMMS_OK;
 }
 
-/**
- * @brief 将内部可变服务状态同步到对外只读视图
- */
+static void s_mark_malformed_frame(const char* reason, uint8_t type) {
+    s_visual_comms.malformed_frame_count++;
+    s_sync_view();
+    (void)log_warn("VISUAL COMMS reject frame reason=%s type=0x%02X count=%lu",
+                   reason,
+                   (unsigned int)type,
+                   (unsigned long)s_visual_comms.malformed_frame_count);
+}
+
 static void s_sync_view(void) {
     s_visual_comms_view = s_visual_comms;
 }
