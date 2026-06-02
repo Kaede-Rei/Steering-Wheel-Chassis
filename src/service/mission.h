@@ -477,6 +477,7 @@ typedef struct {
 typedef struct {
     MissionPhase current_phase;
     MissionZoneId current_zone;
+    bool last_line_sensor_valid;
     MissionAttemptCounters attempts;
     MissionRecognitionResult latest_recognition;
     MissionRecognitionResult last_valid_recognition;
@@ -515,6 +516,7 @@ extern const struct MissionInterface {
     MissionStatus (*set_zone)(MissionZoneId zone);
     MissionStatus (*set_attempt_counters)(const MissionAttemptCounters* counters);
     MissionStatus (*note_recognition)(const MissionRecognitionResult* result, uint32_t now_ms);
+    MissionStatus (*note_line_sensor_valid)(bool valid, uint32_t now_ms);
     MissionStatus (*evaluate_recognition)(const MissionRecognitionResult* result, uint32_t now_ms, MissionRecognitionPolicy* policy);
     MissionStatus (*run_poll_sequence)(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
     MissionStatus (*touch_dependency)(MissionDependencyId dependency, uint32_t now_ms);
@@ -538,6 +540,7 @@ MissionStatus mission_set_phase(MissionPhase phase);
 MissionStatus mission_set_zone(MissionZoneId zone);
 MissionStatus mission_set_attempt_counters(const MissionAttemptCounters* counters);
 MissionStatus mission_note_recognition(const MissionRecognitionResult* result, uint32_t now_ms);
+MissionStatus mission_note_line_sensor_valid(bool valid, uint32_t now_ms);
 MissionStatus mission_evaluate_recognition(const MissionRecognitionResult* result, uint32_t now_ms, MissionRecognitionPolicy* policy);
 MissionStatus mission_run_poll_sequence(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
 MissionStatus mission_touch_dependency(MissionDependencyId dependency, uint32_t now_ms);

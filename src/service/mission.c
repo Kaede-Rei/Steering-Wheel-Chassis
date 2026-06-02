@@ -49,6 +49,7 @@ const struct MissionInterface mission_interface = {
     .set_zone = mission_set_zone,
     .set_attempt_counters = mission_set_attempt_counters,
     .note_recognition = mission_note_recognition,
+    .note_line_sensor_valid = mission_note_line_sensor_valid,
     .evaluate_recognition = mission_evaluate_recognition,
     .run_poll_sequence = mission_run_poll_sequence,
     .touch_dependency = mission_touch_dependency,
@@ -158,6 +159,17 @@ MissionStatus mission_note_recognition(const MissionRecognitionResult* result, u
 
     vision_freshness = mission_compute_freshness(now_ms, now_ms, VISION_STALE_MAX_MS, VISION_REPLY_TIMEOUT_MS);
     s_mission_runtime.dependency_health.vision = vision_freshness;
+    s_mission_runtime.freshness.last_runtime_update_ms = now_ms;
+    return MISSION_OK;
+}
+
+MissionStatus mission_note_line_sensor_valid(bool valid, uint32_t now_ms) {
+    if(!s_mission_runtime.initialized) {
+        mission_init();
+    }
+
+    s_mission_runtime.last_line_sensor_valid = valid;
+    s_mission_runtime.freshness.line_sensor_timestamp_ms = now_ms;
     s_mission_runtime.freshness.last_runtime_update_ms = now_ms;
     return MISSION_OK;
 }
@@ -600,6 +612,7 @@ static void mission_reset_runtime(MissionRuntime* runtime) {
     memset(runtime, 0, sizeof(*runtime));
     runtime->current_phase = MISSION_PHASE_IDLE;
     runtime->current_zone = MISSION_ZONE_NONE;
+    runtime->last_line_sensor_valid = false;
     runtime->last_fault_cause = MISSION_FAULT_NONE;
     runtime->run_result = MISSION_RUN_RESULT_NONE;
     runtime->motion_owner = MISSION_MOTION_OWNER_NONE;

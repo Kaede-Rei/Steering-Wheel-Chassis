@@ -71,6 +71,7 @@ static CompetitionState competition_state_from_node(const HfsmState* state);
 static bool competition_post_raw(CompetitionEvent event_id, uint32_t argument);
 static MissionFaultCause competition_event_fault_cause(const HfsmEvent* e, MissionFaultCause fallback);
 static void competition_clear_runtime(CompetitionContext* ctx);
+static void competition_sync_snapshot(CompetitionContext* ctx);
 static void competition_set_state(HfsmMachine* m, CompetitionState state);
 static void competition_set_phase(HfsmMachine* m, MissionPhase phase);
 static void competition_sync_attempts(HfsmMachine* m);
@@ -95,6 +96,9 @@ static void competition_watch_runtime_safety(CompetitionContext* ctx, uint32_t n
 static void competition_handle_scan_retry_request(HfsmMachine* m, MissionZoneId zone, MissionRecognitionAnomaly anomaly);
 static void competition_handle_scan_skip(HfsmMachine* m, MissionZoneId zone, const HfsmState* advance_target, MissionRecognitionAnomaly anomaly);
 static const char* competition_recognition_anomaly_str(MissionRecognitionAnomaly anomaly);
+#ifdef COMPETITION_VERIFY_MODE
+static void competition_log_observability(const char* reason);
+#endif
 
 // ! ========================= 私 有 常 量 声 明 ========================= ! //
 
@@ -304,7 +308,7 @@ CompetitionStatus competition_init(void) {
     mission.init();
     hfsm_core.init(&s_competition.machine, &s_competition_idle, &s_competition);
     s_competition.snapshot.initialized = true;
-    s_competition.snapshot.current_state = competition_state_from_node(hfsm_core.state(&s_competition.machine));
+    competition_sync_snapshot(&s_competition);
     competition_sync_attempts(&s_competition.machine);
     return COMPETITION_OK;
 }
@@ -320,7 +324,7 @@ CompetitionStatus competition_process(void) {
     mission.update_freshness(now_ms);
     competition_watch_runtime_safety(&s_competition, now_ms);
     hfsm_core.process(&s_competition.machine);
-    s_competition.snapshot.current_state = competition_state_from_node(hfsm_core.state(&s_competition.machine));
+    competition_sync_snapshot(&s_competition);
     return COMPETITION_OK;
 }
 
@@ -335,7 +339,7 @@ CompetitionStatus competition_process_all(void) {
     mission.update_freshness(now_ms);
     competition_watch_runtime_safety(&s_competition, now_ms);
     hfsm_core.process_all(&s_competition.machine);
-    s_competition.snapshot.current_state = competition_state_from_node(hfsm_core.state(&s_competition.machine));
+    competition_sync_snapshot(&s_competition);
     return COMPETITION_OK;
 }
 
@@ -391,6 +395,7 @@ CompetitionStatus competition_handle_recognition(const MissionRecognitionResult*
 
     if(competition_is_scan_state(current) == false) {
         mission_status = mission.note_recognition(result, now_ms);
+        competition_sync_snapshot(ctx);
         return (mission_status == MISSION_OK) ? COMPETITION_OK : COMPETITION_INVALID_PARAM;
     }
 
@@ -398,6 +403,11 @@ CompetitionStatus competition_handle_recognition(const MissionRecognitionResult*
     if(mission_status != MISSION_OK) {
         return COMPETITION_INVALID_PARAM;
     }
+
+    competition_sync_snapshot(ctx);
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("recognition");
+#endif
 
     zone = mission.get_state()->current_zone;
     switch(policy.action) {
@@ -453,6 +463,11 @@ CompetitionStatus competition_handle_uav_handoff_ack(const MissionUavHandoffAck*
     if(mission_status != MISSION_OK) {
         return COMPETITION_INVALID_PARAM;
     }
+
+    competition_sync_snapshot(ctx);
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("uav-ack");
+#endif
 
     current = hfsm_core.state(&ctx->machine);
     if(current != &s_competition_go_d_handoff) {
@@ -779,6 +794,7 @@ static void competition_idle_entry(HfsmMachine* m) {
     ctx->snapshot.pending_fault_cause = MISSION_FAULT_NONE;
     ctx->snapshot.duplicate_start_logged = false;
     mission.set_phase(MISSION_PHASE_IDLE);
+    competition_sync_snapshot(ctx);
     competition_sync_attempts(m);
     competition_emit_mission_event();
 }
@@ -879,6 +895,7 @@ static void competition_go_d_handoff_entry(HfsmMachine* m) {
         COMPETITION_D_HANDOFF_STEP_READY,
         ctx->snapshot.attempts.uav_handoff_retry_count,
         now_ms);
+    competition_sync_snapshot(ctx);
     competition_send_voice_event(MISSION_VOICE_EVENT_D_HANDOFF_READY, MISSION_ZONE_D, 0u);
     (void)visual_comms.send_uav_handoff_request(COMPETITION_D_HANDOFF_STEP_READY);
 }
@@ -891,6 +908,10 @@ static void competition_go_home_entry(HfsmMachine* m) {
 static void competition_finish_entry(HfsmMachine* m) {
     competition_set_state(m, COMPETITION_STATE_FINISH);
     mission.finish_success();
+    competition_sync_snapshot(competition_context(m));
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("finish");
+#endif
     competition_emit_mission_event();
     competition_send_voice_event(MISSION_VOICE_EVENT_RUN_FINISHED, MISSION_ZONE_HOME, MISSION_RUN_RESULT_SUCCESS);
     hfsm_core.clear(m);
@@ -900,6 +921,10 @@ static void competition_finish_entry(HfsmMachine* m) {
 static void competition_stopped_entry(HfsmMachine* m) {
     competition_set_state(m, COMPETITION_STATE_STOPPED);
     mission.stop();
+    competition_sync_snapshot(competition_context(m));
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("stopped");
+#endif
     competition_emit_mission_event();
     competition_send_voice_event(MISSION_VOICE_EVENT_RUN_STOPPED, MISSION_ZONE_NONE, MISSION_RUN_RESULT_STOPPED);
     hfsm_core.clear(m);
@@ -915,6 +940,10 @@ static void competition_fault_entry(HfsmMachine* m) {
 
     competition_set_state(m, COMPETITION_STATE_FAULT);
     mission.record_fault(ctx->snapshot.pending_fault_cause);
+    competition_sync_snapshot(ctx);
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("fault");
+#endif
     competition_emit_mission_event();
     competition_send_voice_event(MISSION_VOICE_EVENT_RUN_FAULT, MISSION_ZONE_NONE, ctx->snapshot.pending_fault_cause);
     hfsm_core.clear(m);
@@ -931,6 +960,10 @@ static void competition_estop_entry(HfsmMachine* m) {
     competition_set_state(m, COMPETITION_STATE_ESTOP);
     ctx->snapshot.pending_fault_cause = MISSION_FAULT_ESTOP_REQUESTED;
     mission.estop();
+    competition_sync_snapshot(ctx);
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("estop");
+#endif
     competition_emit_mission_event();
     competition_send_voice_event(MISSION_VOICE_EVENT_RUN_ESTOP, MISSION_ZONE_NONE, MISSION_RUN_RESULT_ESTOP);
     hfsm_core.clear(m);
@@ -991,6 +1024,7 @@ static void competition_clear_runtime(CompetitionContext* ctx) {
     ctx->scan_request_timestamp_ms = 0u;
     ctx->uav_handoff_start_timestamp_ms = 0u;
     ctx->remote_link_loss_logged = false;
+    competition_sync_snapshot(ctx);
 }
 
 static void competition_set_state(HfsmMachine* m, CompetitionState state) {
@@ -1009,6 +1043,10 @@ static void competition_set_phase(HfsmMachine* m, MissionPhase phase) {
     (void)m;
     mission.set_phase(phase);
     competition_sync_attempts(m);
+    competition_sync_snapshot(competition_context(m));
+#ifdef COMPETITION_VERIFY_MODE
+    competition_log_observability("phase-enter");
+#endif
     competition_emit_mission_event();
 }
 
@@ -1031,6 +1069,52 @@ static void competition_emit_mission_event(void) {
 
     (void)visual_comms.send_mission_event(runtime->current_phase, runtime->current_zone, runtime->run_result);
 }
+
+static void competition_sync_snapshot(CompetitionContext* ctx) {
+    const MissionRuntime* runtime = NULL;
+    const LineSensorState* line_state = line_sensor_get_state();
+
+    if(ctx == NULL || ctx->snapshot.initialized == false) {
+        return;
+    }
+
+    runtime = mission.get_state();
+    if(runtime == NULL) {
+        return;
+    }
+
+    ctx->snapshot.current_state = competition_state_from_node(hfsm_core.state(&ctx->machine));
+    ctx->snapshot.current_phase = runtime->current_phase;
+    ctx->snapshot.current_zone = runtime->current_zone;
+    ctx->snapshot.last_vision_result = runtime->latest_recognition;
+    ctx->snapshot.has_last_vision_result = runtime->has_latest_recognition;
+    ctx->snapshot.last_line_sensor_valid = (line_state != NULL) ? line_state->state_valid : false;
+    ctx->snapshot.last_fault_cause = runtime->last_fault_cause;
+    ctx->snapshot.final_run_result = runtime->run_result;
+}
+
+#ifdef COMPETITION_VERIFY_MODE
+static void competition_log_observability(const char* reason) {
+    const CompetitionContext* ctx = &s_competition;
+
+    if(ctx->snapshot.initialized == false) {
+        return;
+    }
+
+    log_info(
+        "competition: %s phase=%u zone=%u vision_ready=%u vision_zone=%u vision_sex=%u vision_flags=0x%02X line_valid=%u fault=%u run=%u",
+        reason,
+        (unsigned)ctx->snapshot.current_phase,
+        (unsigned)ctx->snapshot.current_zone,
+        ctx->snapshot.has_last_vision_result ? 1u : 0u,
+        (unsigned)ctx->snapshot.last_vision_result.zone,
+        (unsigned)ctx->snapshot.last_vision_result.sex,
+        (unsigned)ctx->snapshot.last_vision_result.flags,
+        ctx->snapshot.last_line_sensor_valid ? 1u : 0u,
+        (unsigned)ctx->snapshot.last_fault_cause,
+        (unsigned)ctx->snapshot.final_run_result);
+}
+#endif
 
 static void competition_send_voice_event(MissionVoiceEventId event_id, MissionZoneId zone, uint8_t sex_or_result) {
     (void)visual_comms.send_voice_event(event_id, zone, sex_or_result);

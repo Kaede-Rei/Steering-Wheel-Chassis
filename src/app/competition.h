@@ -88,8 +88,15 @@ typedef enum {
  */
 typedef struct {
     CompetitionState current_state;
-    MissionAttemptCounters attempts;
+    MissionPhase current_phase;
+    MissionZoneId current_zone;
+    MissionRecognitionResult last_vision_result;
+    bool has_last_vision_result;
+    bool last_line_sensor_valid;
+    MissionFaultCause last_fault_cause;
+    MissionRunResult final_run_result;
     MissionFaultCause pending_fault_cause;
+    MissionAttemptCounters attempts;
     bool duplicate_start_logged;
     bool initialized;
 } Competition;

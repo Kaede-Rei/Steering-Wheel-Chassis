@@ -181,6 +181,9 @@ static inline void entry_loop(void) {
             line_sensor_update();
 
             const LineSensorState* line_state = line_sensor_get_state();
+            if(line_state != NULL) {
+                (void)mission.note_line_sensor_valid(line_state->state_valid, now_ms);
+            }
             if(line_state != NULL && line_state->source_update_count > 0u) {
                 mission.touch_dependency(MISSION_DEPENDENCY_ID_LINE_SENSOR, now_ms);
             }
@@ -215,6 +218,22 @@ static inline void entry_loop(void) {
 
     if(delay_nb_ms(&log_task, 1000)) {
         FiveDofArmPose arm_pose = arm.get_current_pose() != NULL ? *arm.get_current_pose() : (FiveDofArmPose){ 0 };
+#ifdef COMPETITION_VERIFY_MODE
+        const Competition* competition_state = competition.get_state();
+        if(competition_state != NULL) {
+            log_info(
+                "Competition Trace phase=%u zone=%u vision_ready=%u vision_zone=%u vision_sex=%u vision_flags=0x%02X line_valid=%u fault=%u run=%u",
+                (unsigned)competition_state->current_phase,
+                (unsigned)competition_state->current_zone,
+                competition_state->has_last_vision_result ? 1u : 0u,
+                (unsigned)competition_state->last_vision_result.zone,
+                (unsigned)competition_state->last_vision_result.sex,
+                (unsigned)competition_state->last_vision_result.flags,
+                competition_state->last_line_sensor_valid ? 1u : 0u,
+                (unsigned)competition_state->last_fault_cause,
+                (unsigned)competition_state->final_run_result);
+        }
+#endif
         log_info("Arm Pose: (%.2f, %.2f, %.2f)", arm_pose.position.x, arm_pose.position.y, arm_pose.position.z);
     }
 }
