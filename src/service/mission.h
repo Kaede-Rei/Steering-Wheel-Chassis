@@ -289,6 +289,146 @@ typedef struct {
 } MissionDependencyHealth;
 
 /**
+ * @brief 外部依赖 ID，用于 mission runtime 的通用新鲜度更新接口
+ */
+typedef enum {
+    MISSION_DEPENDENCY_ID_VISION = 0,
+    MISSION_DEPENDENCY_ID_LINE_SENSOR,
+    MISSION_DEPENDENCY_ID_REMOTE_LINK,
+    MISSION_DEPENDENCY_ID_MISSION_HEARTBEAT,
+    MISSION_DEPENDENCY_ID_UAV_HANDOFF,
+} MissionDependencyId;
+
+/**
+ * @brief 任务运行中需要跨阶段保留的尝试计数
+ */
+typedef struct {
+    uint8_t target_index;
+    uint8_t scan_retry_count;
+    uint8_t wrong_zone_count;
+    uint8_t uav_handoff_retry_count;
+} MissionAttemptCounters;
+
+/**
+ * @brief 新鲜度时间戳账本，统一由 mission runtime 持有
+ */
+typedef struct {
+    uint32_t latest_recognition_timestamp_ms;
+    uint32_t last_valid_recognition_timestamp_ms;
+    uint32_t vision_timestamp_ms;
+    uint32_t line_sensor_timestamp_ms;
+    uint32_t remote_link_timestamp_ms;
+    uint32_t mission_heartbeat_timestamp_ms;
+    uint32_t uav_handoff_timestamp_ms;
+    uint32_t last_runtime_update_ms;
+} MissionFreshnessBookkeeping;
+
+/**
+ * @brief D 区 UAV 交接运行时快照
+ */
+typedef struct {
+    bool pending;
+    bool completed;
+    bool has_ack;
+    uint8_t handoff_step;
+    uint8_t request_count;
+    uint32_t request_timestamp_ms;
+    uint32_t ack_timestamp_ms;
+    MissionUavHandoffAck last_ack;
+} MissionUavHandoffState;
+
+/**
+ * @brief 比赛任务运行时上下文快照
+ *
+ * 该结构由 `mission.c` 独占写入；上层通过只读 getter 观察当前上下文，
+ * 避免直接依赖原始 UART 数据或灰度位掩码细节。
+ */
+typedef struct {
+    MissionPhase current_phase;
+    MissionZoneId current_zone;
+    MissionAttemptCounters attempts;
+    MissionRecognitionResult latest_recognition;
+    MissionRecognitionResult last_valid_recognition;
+    MissionDependencyHealth dependency_health;
+    MissionFreshnessBookkeeping freshness;
+    MissionUavHandoffState uav_handoff;
+    MissionFaultCause last_fault_cause;
+    MissionRunResult run_result;
+    bool has_latest_recognition;
+    bool latest_recognition_fresh;
+    bool has_last_valid_recognition;
+    bool initialized;
+} MissionRuntime;
+
+/**
+ * @brief mission runtime 服务接口单例别名
+ */
+#define mission mission_interface
+
+/**
+ * @brief mission runtime 服务接口表
+ */
+extern const struct MissionInterface {
+#define X(name, str) MissionStatus name;
+    struct {
+        MISSION_STATUS_TABLE
+    };
+#undef X
+
+    void (*init)(void);
+    MissionStatus (*reset)(void);
+    MissionStatus (*set_phase)(MissionPhase phase);
+    MissionStatus (*set_zone)(MissionZoneId zone);
+    MissionStatus (*set_attempt_counters)(const MissionAttemptCounters* counters);
+    MissionStatus (*note_recognition)(const MissionRecognitionResult* result, uint32_t now_ms);
+    MissionStatus (*touch_dependency)(MissionDependencyId dependency, uint32_t now_ms);
+    MissionStatus (*set_dependency_freshness)(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
+    MissionStatus (*update_freshness)(uint32_t now_ms);
+    MissionStatus (*record_fault)(MissionFaultCause cause);
+    MissionStatus (*stop)(void);
+    MissionStatus (*estop)(void);
+    MissionStatus (*finish_success)(void);
+    MissionStatus (*start_uav_handoff)(uint8_t handoff_step, uint8_t request_count, uint32_t now_ms);
+    MissionStatus (*note_uav_handoff_ack)(const MissionUavHandoffAck* ack, uint32_t now_ms);
+    MissionStatus (*clear_uav_handoff)(void);
+    const MissionRuntime* (*get_state)(void);
+} mission_interface;
+
+// ! ========================= 接 口 函 数 声 明 ========================= ! //
+
+void mission_init(void);
+MissionStatus mission_reset(void);
+MissionStatus mission_set_phase(MissionPhase phase);
+MissionStatus mission_set_zone(MissionZoneId zone);
+MissionStatus mission_set_attempt_counters(const MissionAttemptCounters* counters);
+MissionStatus mission_note_recognition(const MissionRecognitionResult* result, uint32_t now_ms);
+MissionStatus mission_touch_dependency(MissionDependencyId dependency, uint32_t now_ms);
+MissionStatus mission_set_dependency_freshness(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
+MissionStatus mission_update_freshness(uint32_t now_ms);
+MissionStatus mission_record_fault(MissionFaultCause cause);
+MissionStatus mission_stop(void);
+MissionStatus mission_estop(void);
+MissionStatus mission_finish_success(void);
+MissionStatus mission_start_uav_handoff(uint8_t handoff_step, uint8_t request_count, uint32_t now_ms);
+MissionStatus mission_note_uav_handoff_ack(const MissionUavHandoffAck* ack, uint32_t now_ms);
+MissionStatus mission_clear_uav_handoff(void);
+const MissionRuntime* mission_get_state(void);
+
+#ifdef COMPETITION_VERIFY_MODE
+/**
+ * @brief 为仓库级验证直接注入完整 mission runtime 快照
+ * @param state 目标运行时快照
+ * @return MissionStatus 注入结果
+ */
+MissionStatus mission_verify_inject_state(const MissionRuntime* state);
+
+/**
+ * @brief 清空 mission runtime 到默认初始态，便于确定性验证
+ */
+void mission_verify_reset(void);
+#endif
+
+/**
  * @brief frozen 运行语义边界说明
  *
  * - 任务激活期间重复收到 `START`：忽略，仅允许记录日志
