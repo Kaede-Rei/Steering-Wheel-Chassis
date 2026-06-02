@@ -6,6 +6,7 @@
 
 
 // ! app ! //
+#include "competition.h"
 #include "remote.h"
 
 
@@ -47,6 +48,59 @@ static uint8_t remote_tick = 0;
 static uint8_t led_state = 0u;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
+
+static inline bool entry_competition_is_scan_state(CompetitionState state) {
+    return state == COMPETITION_STATE_A_SCAN
+        || state == COMPETITION_STATE_B_SCAN
+        || state == COMPETITION_STATE_C_SCAN;
+}
+
+static inline void entry_competition_consume_visual_inputs(void) {
+    MissionCommand command = MISSION_COMMAND_NONE;
+    MissionRecognitionResult recognition = { 0 };
+    MissionUavHandoffAck handoff_ack = { 0 };
+    const ms_t now_ms = delay_now_ms();
+    const CompetitionState competition_state = competition.get_state_id();
+    const MissionRuntime* mission_state = mission.get_state();
+
+    if(visual_comms.consume_command(&command)) {
+        mission.touch_dependency(MISSION_DEPENDENCY_ID_VISION, now_ms);
+        (void)competition.handle_command(command);
+    }
+
+    if(visual_comms.consume_recognition(&recognition)) {
+        mission.touch_dependency(MISSION_DEPENDENCY_ID_VISION, now_ms);
+        (void)mission.note_recognition(&recognition, now_ms);
+
+        if(entry_competition_is_scan_state(competition_state)
+            && mission_state != NULL
+            && recognition.zone == mission_state->current_zone) {
+            if(visual_comms.recognition_is_stale(&recognition) || recognition.sex == FLOWER_SEX_UNKNOWN) {
+                (void)competition.post_event(COMPETITION_EVENT_STALE_OR_UNKNOWN_RESULT, 0u);
+            }
+            else if(recognition.sex == FLOWER_SEX_FEMALE) {
+                (void)competition.post_event(COMPETITION_EVENT_FEMALE_RESULT, 0u);
+            }
+            else {
+                (void)competition.post_event(COMPETITION_EVENT_MALE_RESULT, 0u);
+            }
+        }
+    }
+
+    if(visual_comms.consume_uav_handoff_ack(&handoff_ack)) {
+        mission.touch_dependency(MISSION_DEPENDENCY_ID_UAV_HANDOFF, now_ms);
+        (void)mission.note_uav_handoff_ack(&handoff_ack, now_ms);
+
+        if(competition_state == COMPETITION_STATE_GO_D_HANDOFF) {
+            if(handoff_ack.status == MISSION_UAV_HANDOFF_SUCCESS) {
+                (void)competition.post_event(COMPETITION_EVENT_ACTION_COMPLETE, 0u);
+            }
+            else if(handoff_ack.status == MISSION_UAV_HANDOFF_FAIL_TERMINAL) {
+                (void)competition.post_event(COMPETITION_EVENT_TERMINAL_FAULT, MISSION_FAULT_UAV_HANDOFF_FAIL_TERMINAL);
+            }
+        }
+    }
+}
 
 /**
  * @brief 程序初始化入口函数
@@ -112,6 +166,13 @@ static inline void entry_init(void) {
     if(error_code != ARM_OK) {
         log_error("Failed to move arm to initial position: %s", arm.status_str(error_code));
     }
+
+    CompetitionStatus competition_status = competition.init();
+    if(competition_status != competition.OK) {
+        log_error("BOOT competition init failed: %s", competition.status_str(competition_status));
+        return;
+    }
+    log_info("BOOT competition init step done");
 }
 
 /**
@@ -141,10 +202,24 @@ static inline void entry_loop(void) {
             remote_process();
             remote_tick = 0;
 
+            const ms_t now_ms = delay_now_ms();
+            RemoteCommand remote_command = { 0 };
+            if(remote_get_command(&remote_command)) {
+                mission.touch_dependency(MISSION_DEPENDENCY_ID_REMOTE_LINK, now_ms);
+            }
+
             gw_gray_update();
             line_sensor_update();
+
+            const LineSensorState* line_state = line_sensor_get_state();
+            if(line_state != NULL && line_state->source_update_count > 0u) {
+                mission.touch_dependency(MISSION_DEPENDENCY_ID_LINE_SENSOR, now_ms);
+            }
         }
     }
+
+    entry_competition_consume_visual_inputs();
+    competition.process();
 
     // ! 周期性任务 ! //
     if(delay_nb_ms(&heartbeat_task, 1000)) {
