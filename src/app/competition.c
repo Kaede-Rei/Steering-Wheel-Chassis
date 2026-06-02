@@ -81,6 +81,7 @@ static HfsmResult competition_handle_scan_retry(
     const HfsmState* advance_target);
 static void competition_finish_zone(HfsmMachine* m);
 static void competition_prepare_fault(HfsmMachine* m, MissionFaultCause cause);
+static bool competition_reset_allowed(const HfsmState* current);
 
 // ! ========================= 私 有 常 量 声 明 ========================= ! //
 
@@ -401,10 +402,7 @@ static HfsmResult competition_root_handle(HfsmMachine* m, const HfsmEvent* e) {
 
     switch((CompetitionEvent)e->id) {
     case COMPETITION_EVENT_RESET:
-        if(current == &s_competition_idle
-            || current == &s_competition_stopped
-            || current == &s_competition_fault
-            || current == &s_competition_estop) {
+        if(competition_reset_allowed(current)) {
             hfsm_core.clear(m);
             if(mission.reset() == MISSION_OK) {
                 competition_clear_runtime(ctx);
@@ -413,6 +411,7 @@ static HfsmResult competition_root_handle(HfsmMachine* m, const HfsmEvent* e) {
                     : hfsm_core.res.transition(&s_competition_idle);
             }
         }
+        log_warn("competition: RESET ignored while %s", competition_state_str(competition_state_from_node(current)));
         return hfsm_core.res.handled();
 
     case COMPETITION_EVENT_ESTOP:
@@ -986,4 +985,11 @@ static void competition_prepare_fault(HfsmMachine* m, MissionFaultCause cause) {
     }
 
     ctx->snapshot.pending_fault_cause = cause;
+}
+
+static bool competition_reset_allowed(const HfsmState* current) {
+    return current == &s_competition_idle
+        || current == &s_competition_stopped
+        || current == &s_competition_fault
+        || current == &s_competition_estop;
 }

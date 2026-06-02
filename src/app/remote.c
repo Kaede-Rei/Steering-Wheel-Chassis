@@ -9,6 +9,7 @@
 #include "chassis_yaw_hold.h"
 #include "fs_ia10b.h"
 #include "imu/imu.h"
+#include "mission.h"
 
 #include <math.h>
 #include <string.h>
@@ -192,6 +193,8 @@ static void chassis_control_task(FsIa10bData rc_data);
 
 static void arm_control_task(FsIa10bData rc_data);
 
+static bool remote_chassis_manual_allowed(void);
+
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 /**
@@ -219,7 +222,19 @@ void remote_process(void) {
 
     if(!ibus_get_data(&rc_data) || !ibus_is_online(REMOTE_TIMEOUT_MS) || rc_data.channel[REMOTE_CH_SWD] == REMOTE_SW_HIGH) return;
 
-    if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_HIGH) chassis_control_task(rc_data);
+    if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_HIGH) {
+        if(remote_chassis_manual_allowed()) {
+            chassis_control_task(rc_data);
+        }
+        else {
+            s_command.vx = 0.0f;
+            s_command.vy = 0.0f;
+            s_command.wz = 0.0f;
+            s_command.online = true;
+            chassis_yaw_hold_reset();
+            (void)chassis.set_velocity(0.0f, 0.0f, 0.0f);
+        }
+    }
     else if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_LOW) arm_control_task(rc_data);
 }
 
@@ -322,6 +337,12 @@ static RemoteArmSpeedLimit get_arm_speed_limit(uint16_t swb) {
     }
 
     return limit;
+}
+
+static bool remote_chassis_manual_allowed(void) {
+    const MissionRuntime* runtime = mission.get_state();
+
+    return runtime != NULL && runtime->current_phase == MISSION_PHASE_IDLE;
 }
 
 static void chassis_control_task(FsIa10bData rc_data) {
