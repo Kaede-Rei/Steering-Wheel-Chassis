@@ -310,6 +310,100 @@ typedef struct {
 } MissionAttemptCounters;
 
 /**
+ * @brief 底盘运动控制权归属
+ *
+ * 用于在导航与授粉动作之间给出唯一的控制责任来源，避免未来 app 层出现
+ * “底盘还在跑导航，但机械臂已经开始授粉”的歧义并发。
+ */
+typedef enum {
+    MISSION_MOTION_OWNER_NONE = 0,
+    MISSION_MOTION_OWNER_NAVIGATION,
+    MISSION_MOTION_OWNER_POLL_SEQUENCE,
+} MissionMotionOwner;
+
+/**
+ * @brief 授粉期间的底盘保持状态
+ */
+typedef enum {
+    MISSION_CHASSIS_HOLD_NONE = 0,
+    MISSION_CHASSIS_HOLD_BRAKE_REQUESTED,
+    MISSION_CHASSIS_HOLD_HELD,
+} MissionChassisHoldState;
+
+/**
+ * @brief 共享授粉序列当前阶段
+ */
+typedef enum {
+    MISSION_POLL_SEQUENCE_IDLE = 0,
+    MISSION_POLL_SEQUENCE_WAITING_RECOGNITION,
+    MISSION_POLL_SEQUENCE_EXECUTING_FEMALE_ACTION,
+    MISSION_POLL_SEQUENCE_RETRACTING,
+    MISSION_POLL_SEQUENCE_COMPLETE,
+    MISSION_POLL_SEQUENCE_SKIPPED,
+} MissionPollSequenceState;
+
+/**
+ * @brief 共享授粉序列入口步骤
+ *
+ * 未来 app/HFSM 只需要调用这一条共享 helper path，避免在多个状态里重复编排授粉节拍。
+ */
+typedef enum {
+    MISSION_POLL_SEQUENCE_STEP_PREPARE_APPROACH = 0,
+    MISSION_POLL_SEQUENCE_STEP_CONSUME_RECOGNITION,
+    MISSION_POLL_SEQUENCE_STEP_COMPLETE_ARM_ACTION,
+    MISSION_POLL_SEQUENCE_STEP_COMPLETE_RETRACT,
+    MISSION_POLL_SEQUENCE_STEP_RELEASE_NAVIGATION,
+} MissionPollSequenceStep;
+
+/**
+ * @brief 共享授粉序列对上层返回的决策
+ */
+typedef enum {
+    MISSION_POLL_DECISION_NONE = 0,
+    MISSION_POLL_DECISION_WAIT_RECOGNITION,
+    MISSION_POLL_DECISION_RETRY_SCAN,
+    MISSION_POLL_DECISION_SKIP_TARGET,
+    MISSION_POLL_DECISION_ADVANCE_NO_POLL,
+    MISSION_POLL_DECISION_TRIGGER_FEMALE_ACTION,
+    MISSION_POLL_DECISION_HOLD_FOR_RETRACT,
+    MISSION_POLL_DECISION_RELEASE_NAVIGATION,
+} MissionPollDecision;
+
+/**
+ * @brief 单个目标的授粉序列运行时快照
+ */
+typedef struct {
+    MissionPollSequenceState state;
+    MissionPollDecision last_decision;
+    MissionRecognitionResult selected_recognition;
+    uint32_t sequence_start_timestamp_ms;
+    uint32_t arm_action_timestamp_ms;
+    uint32_t retract_timestamp_ms;
+    FlowerSex decided_sex;
+    bool approach_ready;
+    bool has_selected_recognition;
+    bool female_action_requested;
+    bool female_action_complete;
+    bool retract_requested;
+    bool retract_complete;
+    bool navigation_release_pending;
+    bool chassis_hold_active;
+} MissionPollSequence;
+
+/**
+ * @brief 共享授粉序列单步执行结果
+ */
+typedef struct {
+    MissionPollDecision decision;
+    MissionPollSequenceState state;
+    MissionMotionOwner motion_owner;
+    MissionChassisHoldState chassis_hold_state;
+    bool poll_execution_active;
+    bool should_trigger_female_action;
+    bool navigation_released;
+} MissionPollSequenceUpdate;
+
+/**
  * @brief 新鲜度时间戳账本，统一由 mission runtime 持有
  */
 typedef struct {
@@ -351,6 +445,9 @@ typedef struct {
     MissionRecognitionResult last_valid_recognition;
     MissionDependencyHealth dependency_health;
     MissionFreshnessBookkeeping freshness;
+    MissionMotionOwner motion_owner;
+    MissionChassisHoldState chassis_hold_state;
+    MissionPollSequence poll_sequence;
     MissionUavHandoffState uav_handoff;
     MissionFaultCause last_fault_cause;
     MissionRunResult run_result;
@@ -381,6 +478,7 @@ extern const struct MissionInterface {
     MissionStatus (*set_zone)(MissionZoneId zone);
     MissionStatus (*set_attempt_counters)(const MissionAttemptCounters* counters);
     MissionStatus (*note_recognition)(const MissionRecognitionResult* result, uint32_t now_ms);
+    MissionStatus (*run_poll_sequence)(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
     MissionStatus (*touch_dependency)(MissionDependencyId dependency, uint32_t now_ms);
     MissionStatus (*set_dependency_freshness)(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
     MissionStatus (*update_freshness)(uint32_t now_ms);
@@ -402,6 +500,7 @@ MissionStatus mission_set_phase(MissionPhase phase);
 MissionStatus mission_set_zone(MissionZoneId zone);
 MissionStatus mission_set_attempt_counters(const MissionAttemptCounters* counters);
 MissionStatus mission_note_recognition(const MissionRecognitionResult* result, uint32_t now_ms);
+MissionStatus mission_run_poll_sequence(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
 MissionStatus mission_touch_dependency(MissionDependencyId dependency, uint32_t now_ms);
 MissionStatus mission_set_dependency_freshness(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
 MissionStatus mission_update_freshness(uint32_t now_ms);
