@@ -49,19 +49,11 @@ static uint8_t led_state = 0u;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
-static inline bool entry_competition_is_scan_state(CompetitionState state) {
-    return state == COMPETITION_STATE_A_SCAN
-        || state == COMPETITION_STATE_B_SCAN
-        || state == COMPETITION_STATE_C_SCAN;
-}
-
 static inline void entry_competition_consume_visual_inputs(void) {
     MissionCommand command = MISSION_COMMAND_NONE;
     MissionRecognitionResult recognition = { 0 };
     MissionUavHandoffAck handoff_ack = { 0 };
     const ms_t now_ms = delay_now_ms();
-    const CompetitionState competition_state = competition.get_state_id();
-    const MissionRuntime* mission_state = mission.get_state();
 
     if(visual_comms.consume_command(&command)) {
         mission.touch_dependency(MISSION_DEPENDENCY_ID_VISION, now_ms);
@@ -70,35 +62,12 @@ static inline void entry_competition_consume_visual_inputs(void) {
 
     if(visual_comms.consume_recognition(&recognition)) {
         mission.touch_dependency(MISSION_DEPENDENCY_ID_VISION, now_ms);
-        (void)mission.note_recognition(&recognition, now_ms);
-
-        if(entry_competition_is_scan_state(competition_state)
-            && mission_state != NULL
-            && recognition.zone == mission_state->current_zone) {
-            if(visual_comms.recognition_is_stale(&recognition) || recognition.sex == FLOWER_SEX_UNKNOWN) {
-                (void)competition.post_event(COMPETITION_EVENT_STALE_OR_UNKNOWN_RESULT, 0u);
-            }
-            else if(recognition.sex == FLOWER_SEX_FEMALE) {
-                (void)competition.post_event(COMPETITION_EVENT_FEMALE_RESULT, 0u);
-            }
-            else {
-                (void)competition.post_event(COMPETITION_EVENT_MALE_RESULT, 0u);
-            }
-        }
+        (void)competition.handle_recognition(&recognition, now_ms);
     }
 
     if(visual_comms.consume_uav_handoff_ack(&handoff_ack)) {
         mission.touch_dependency(MISSION_DEPENDENCY_ID_UAV_HANDOFF, now_ms);
-        (void)mission.note_uav_handoff_ack(&handoff_ack, now_ms);
-
-        if(competition_state == COMPETITION_STATE_GO_D_HANDOFF) {
-            if(handoff_ack.status == MISSION_UAV_HANDOFF_SUCCESS) {
-                (void)competition.post_event(COMPETITION_EVENT_ACTION_COMPLETE, 0u);
-            }
-            else if(handoff_ack.status == MISSION_UAV_HANDOFF_FAIL_TERMINAL) {
-                (void)competition.post_event(COMPETITION_EVENT_TERMINAL_FAULT, MISSION_FAULT_UAV_HANDOFF_FAIL_TERMINAL);
-            }
-        }
+        (void)competition.handle_uav_handoff_ack(&handoff_ack, now_ms);
     }
 }
 

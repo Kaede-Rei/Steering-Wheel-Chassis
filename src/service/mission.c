@@ -30,6 +30,7 @@ static MissionDependencyFreshness* mission_dependency_slot(MissionDependencyHeal
 static uint32_t* mission_dependency_timestamp_slot(MissionFreshnessBookkeeping* freshness, MissionDependencyId dependency);
 static bool mission_recognition_is_valid(const MissionRecognitionResult* result);
 static bool mission_recognition_is_fresh(const MissionRecognitionResult* result, uint32_t now_ms, uint32_t timestamp_ms);
+static void mission_fill_recognition_policy(MissionRecognitionPolicy* policy, MissionRecognitionAction action, MissionRecognitionAnomaly anomaly, MissionFaultCause fault_cause);
 static void mission_reset_poll_sequence(MissionRuntime* runtime);
 static bool mission_poll_sequence_execution_active(const MissionRuntime* runtime);
 static void mission_fill_poll_update(MissionPollSequenceUpdate* update, const MissionRuntime* runtime, MissionPollDecision decision, bool should_trigger_female_action, bool navigation_released);
@@ -48,6 +49,7 @@ const struct MissionInterface mission_interface = {
     .set_zone = mission_set_zone,
     .set_attempt_counters = mission_set_attempt_counters,
     .note_recognition = mission_note_recognition,
+    .evaluate_recognition = mission_evaluate_recognition,
     .run_poll_sequence = mission_run_poll_sequence,
     .touch_dependency = mission_touch_dependency,
     .set_dependency_freshness = mission_set_dependency_freshness,
@@ -157,6 +159,70 @@ MissionStatus mission_note_recognition(const MissionRecognitionResult* result, u
     vision_freshness = mission_compute_freshness(now_ms, now_ms, VISION_STALE_MAX_MS, VISION_REPLY_TIMEOUT_MS);
     s_mission_runtime.dependency_health.vision = vision_freshness;
     s_mission_runtime.freshness.last_runtime_update_ms = now_ms;
+    return MISSION_OK;
+}
+
+MissionStatus mission_evaluate_recognition(const MissionRecognitionResult* result, uint32_t now_ms, MissionRecognitionPolicy* policy) {
+    const bool has_scan_retry_budget = s_mission_runtime.attempts.scan_retry_count < UNKNOWN_OR_STALE_SCAN_MAX_RETRIES;
+    const bool has_wrong_zone_budget = s_mission_runtime.attempts.wrong_zone_count < 1u;
+    MissionStatus status = MISSION_OK;
+
+    if(!s_mission_runtime.initialized) {
+        mission_init();
+    }
+    if(policy == NULL) {
+        return MISSION_INVALID_PARAM;
+    }
+
+    mission_fill_recognition_policy(policy, MISSION_RECOGNITION_ACTION_IGNORE, MISSION_RECOGNITION_ANOMALY_NONE, MISSION_FAULT_NONE);
+
+    if(result == NULL) {
+        mission_fill_recognition_policy(
+            policy,
+            has_scan_retry_budget ? MISSION_RECOGNITION_ACTION_RETRY_SCAN : MISSION_RECOGNITION_ACTION_SKIP_TARGET,
+            MISSION_RECOGNITION_ANOMALY_MALFORMED,
+            MISSION_FAULT_NONE);
+        return MISSION_OK;
+    }
+
+    if(mission_recognition_is_valid(result) == false) {
+        mission_fill_recognition_policy(
+            policy,
+            has_scan_retry_budget ? MISSION_RECOGNITION_ACTION_RETRY_SCAN : MISSION_RECOGNITION_ACTION_SKIP_TARGET,
+            MISSION_RECOGNITION_ANOMALY_MALFORMED,
+            MISSION_FAULT_NONE);
+        return MISSION_OK;
+    }
+
+    status = mission_note_recognition(result, now_ms);
+    if(status != MISSION_OK) {
+        return status;
+    }
+
+    if(result->zone != s_mission_runtime.current_zone) {
+        mission_fill_recognition_policy(
+            policy,
+            has_wrong_zone_budget ? MISSION_RECOGNITION_ACTION_RETRY_SCAN : MISSION_RECOGNITION_ACTION_TERMINAL_FAULT,
+            MISSION_RECOGNITION_ANOMALY_WRONG_ZONE,
+            has_wrong_zone_budget ? MISSION_FAULT_NONE : MISSION_FAULT_WRONG_ZONE_REPEATED);
+        return MISSION_OK;
+    }
+
+    if(s_mission_runtime.latest_recognition_fresh == false || result->sex == FLOWER_SEX_UNKNOWN) {
+        mission_fill_recognition_policy(
+            policy,
+            has_scan_retry_budget ? MISSION_RECOGNITION_ACTION_RETRY_SCAN : MISSION_RECOGNITION_ACTION_SKIP_TARGET,
+            MISSION_RECOGNITION_ANOMALY_UNKNOWN_OR_STALE,
+            MISSION_FAULT_NONE);
+        return MISSION_OK;
+    }
+
+    if(result->sex == FLOWER_SEX_FEMALE) {
+        mission_fill_recognition_policy(policy, MISSION_RECOGNITION_ACTION_FEMALE_POLL, MISSION_RECOGNITION_ANOMALY_NONE, MISSION_FAULT_NONE);
+        return MISSION_OK;
+    }
+
+    mission_fill_recognition_policy(policy, MISSION_RECOGNITION_ACTION_ADVANCE_NO_POLL, MISSION_RECOGNITION_ANOMALY_NONE, MISSION_FAULT_NONE);
     return MISSION_OK;
 }
 
@@ -686,6 +752,20 @@ static bool mission_recognition_is_fresh(const MissionRecognitionResult* result,
     }
 
     return mission_compute_freshness(now_ms, timestamp_ms, VISION_STALE_MAX_MS, VISION_REPLY_TIMEOUT_MS) == MISSION_DEPENDENCY_FRESH;
+}
+
+static void mission_fill_recognition_policy(
+    MissionRecognitionPolicy* policy,
+    MissionRecognitionAction action,
+    MissionRecognitionAnomaly anomaly,
+    MissionFaultCause fault_cause) {
+    if(policy == NULL) {
+        return;
+    }
+
+    policy->action = action;
+    policy->anomaly = anomaly;
+    policy->fault_cause = fault_cause;
 }
 
 static void mission_reset_poll_sequence(MissionRuntime* runtime) {

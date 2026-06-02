@@ -12,6 +12,7 @@
  */
 
 #include "mission.h"
+#include "line_sensor.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -75,7 +76,8 @@ typedef enum {
     COMPETITION_EVENT_ZONE_REACHED,
     COMPETITION_EVENT_FEMALE_RESULT,
     COMPETITION_EVENT_MALE_RESULT,
-    COMPETITION_EVENT_STALE_OR_UNKNOWN_RESULT,
+    COMPETITION_EVENT_RETRY_SCAN,
+    COMPETITION_EVENT_SKIP_TARGET,
     COMPETITION_EVENT_ACTION_COMPLETE,
     COMPETITION_EVENT_TIMEOUT,
     COMPETITION_EVENT_TERMINAL_FAULT,
@@ -107,6 +109,9 @@ extern const struct CompetitionInterface {
     CompetitionStatus (*process_all)(void);
     CompetitionStatus (*post_event)(CompetitionEvent event_id, uint32_t argument);
     CompetitionStatus (*handle_command)(MissionCommand command);
+    CompetitionStatus (*handle_recognition)(const MissionRecognitionResult* result, uint32_t now_ms);
+    CompetitionStatus (*handle_uav_handoff_ack)(const MissionUavHandoffAck* ack, uint32_t now_ms);
+    CompetitionStatus (*report_fault)(MissionFaultCause cause);
     CompetitionState (*get_state_id)(void);
     const Competition* (*get_state)(void);
     const char* (*status_str)(CompetitionStatus status);
@@ -121,6 +126,9 @@ CompetitionStatus competition_process(void);
 CompetitionStatus competition_process_all(void);
 CompetitionStatus competition_post_event(CompetitionEvent event_id, uint32_t argument);
 CompetitionStatus competition_handle_command(MissionCommand command);
+CompetitionStatus competition_handle_recognition(const MissionRecognitionResult* result, uint32_t now_ms);
+CompetitionStatus competition_handle_uav_handoff_ack(const MissionUavHandoffAck* ack, uint32_t now_ms);
+CompetitionStatus competition_report_fault(MissionFaultCause cause);
 CompetitionState competition_get_state_id(void);
 const Competition* competition_get_state(void);
 const char* competition_status_str(CompetitionStatus status);

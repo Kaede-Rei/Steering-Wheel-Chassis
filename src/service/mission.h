@@ -238,6 +238,43 @@ typedef enum {
 } MissionFaultCause;
 
 /**
+ * @brief 当前目标识别结果的显式策略动作
+ *
+ * task-10 冻结语义：
+ * - female -> 进入授粉
+ * - male -> 不授粉，直接推进
+ * - unknown/stale/malformed -> 一次补扫，随后 skip
+ * - wrong-zone 连续两次 -> terminal fault
+ */
+typedef enum {
+    MISSION_RECOGNITION_ACTION_IGNORE = 0,
+    MISSION_RECOGNITION_ACTION_FEMALE_POLL,
+    MISSION_RECOGNITION_ACTION_ADVANCE_NO_POLL,
+    MISSION_RECOGNITION_ACTION_RETRY_SCAN,
+    MISSION_RECOGNITION_ACTION_SKIP_TARGET,
+    MISSION_RECOGNITION_ACTION_TERMINAL_FAULT,
+} MissionRecognitionAction;
+
+/**
+ * @brief 识别结果异常分类
+ */
+typedef enum {
+    MISSION_RECOGNITION_ANOMALY_NONE = 0,
+    MISSION_RECOGNITION_ANOMALY_UNKNOWN_OR_STALE,
+    MISSION_RECOGNITION_ANOMALY_MALFORMED,
+    MISSION_RECOGNITION_ANOMALY_WRONG_ZONE,
+} MissionRecognitionAnomaly;
+
+/**
+ * @brief 当前目标识别策略判定结果
+ */
+typedef struct {
+    MissionRecognitionAction action;
+    MissionRecognitionAnomaly anomaly;
+    MissionFaultCause fault_cause;
+} MissionRecognitionPolicy;
+
+/**
  * @brief 三维识别位姿
  */
 typedef struct {
@@ -478,6 +515,7 @@ extern const struct MissionInterface {
     MissionStatus (*set_zone)(MissionZoneId zone);
     MissionStatus (*set_attempt_counters)(const MissionAttemptCounters* counters);
     MissionStatus (*note_recognition)(const MissionRecognitionResult* result, uint32_t now_ms);
+    MissionStatus (*evaluate_recognition)(const MissionRecognitionResult* result, uint32_t now_ms, MissionRecognitionPolicy* policy);
     MissionStatus (*run_poll_sequence)(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
     MissionStatus (*touch_dependency)(MissionDependencyId dependency, uint32_t now_ms);
     MissionStatus (*set_dependency_freshness)(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
@@ -500,6 +538,7 @@ MissionStatus mission_set_phase(MissionPhase phase);
 MissionStatus mission_set_zone(MissionZoneId zone);
 MissionStatus mission_set_attempt_counters(const MissionAttemptCounters* counters);
 MissionStatus mission_note_recognition(const MissionRecognitionResult* result, uint32_t now_ms);
+MissionStatus mission_evaluate_recognition(const MissionRecognitionResult* result, uint32_t now_ms, MissionRecognitionPolicy* policy);
 MissionStatus mission_run_poll_sequence(MissionPollSequenceStep step, const MissionRecognitionResult* recognition, uint32_t now_ms, MissionPollSequenceUpdate* update);
 MissionStatus mission_touch_dependency(MissionDependencyId dependency, uint32_t now_ms);
 MissionStatus mission_set_dependency_freshness(MissionDependencyId dependency, MissionDependencyFreshness freshness, uint32_t now_ms);
