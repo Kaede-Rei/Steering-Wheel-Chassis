@@ -1,11 +1,6 @@
 #ifndef _serial_arm_kine_h_
 #define _serial_arm_kine_h_
 
-/**
- * @file serial_arm_kine.h
- * @brief 通用串联机械臂 MDH/FK/IK 接口
- */
-
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -192,7 +187,7 @@ typedef struct SerialArmKineInterface {
      * @param convention DH 约定类型
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*model_reset)(SerialArmModel* model, uint8_t dof, SerialArmDhConvention convention);
+    SerialArmStatus (*model_reset)(SerialArmModel* model, uint8_t dof, SerialArmDhConvention convention);
     /**
      * @brief 设置转动关节的 DH/MDH 参数
      * @param model 目标模型
@@ -206,9 +201,9 @@ typedef struct SerialArmKineInterface {
      * @param q_max 关节最大值
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*model_set_revolute)(SerialArmModel* model, uint8_t index,
-        float theta_home, float d, float a, float alpha,
-        float q_offset, float q_min, float q_max);
+    SerialArmStatus (*model_set_revolute)(SerialArmModel* model, uint8_t index,
+                                          float theta_home, float d, float a, float alpha,
+                                          float q_offset, float q_min, float q_max);
     /**
      * @brief 设置移动关节的 DH/MDH 参数
      * @param model 目标模型
@@ -222,9 +217,9 @@ typedef struct SerialArmKineInterface {
      * @param q_max 关节最大值
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*model_set_prismatic)(SerialArmModel* model, uint8_t index,
-        float theta, float d_home, float a, float alpha,
-        float q_offset, float q_min, float q_max);
+    SerialArmStatus (*model_set_prismatic)(SerialArmModel* model, uint8_t index,
+                                           float theta, float d_home, float a, float alpha,
+                                           float q_offset, float q_min, float q_max);
     /**
      * @brief 设置关节输入方向符号
      * @param model 目标模型
@@ -232,30 +227,30 @@ typedef struct SerialArmKineInterface {
      * @param q_sign 输入方向，正值视为 `+1`，负值视为 `-1`
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*model_set_joint_sign)(SerialArmModel* model, uint8_t index, float q_sign);
+    SerialArmStatus (*model_set_joint_sign)(SerialArmModel* model, uint8_t index, float q_sign);
     /**
      * @brief 载入模型并初始化求解器内部状态
      * @param model 已完成配置的模型
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*init)(const SerialArmModel* model);
+    SerialArmStatus (*init)(const SerialArmModel* model);
     /**
      * @brief 获取当前 IK 任务行配置
      * @param info 输出任务信息
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*get_task_info)(SerialArmTaskInfo* info);
+    SerialArmStatus (*get_task_info)(SerialArmTaskInfo* info);
     /**
      * @brief 显式设置 IK 任务行配置
      * @param info 目标任务信息
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*set_task_info)(const SerialArmTaskInfo* info);
+    SerialArmStatus (*set_task_info)(const SerialArmTaskInfo* info);
     /**
      * @brief 恢复为按自由度自动推断的 IK 任务行配置
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*reset_task_info)(void);
+    SerialArmStatus (*reset_task_info)(void);
     /**
      * @brief 获取任务行索引对应的名称
      * @param row 任务行索引
@@ -274,14 +269,14 @@ typedef struct SerialArmKineInterface {
      * @param pose 输出位姿
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*fk)(const SerialArmJointArray* joints, SerialArmPose* pose);
+    SerialArmStatus (*fk)(const SerialArmJointArray* joints, SerialArmPose* pose);
     /**
      * @brief 计算正运动学并输出齐次变换矩阵
      * @param joints 输入关节数组
      * @param T 输出 4x4 齐次变换矩阵
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*fk_matrix)(const SerialArmJointArray* joints, SerialArmTransform* T);
+    SerialArmStatus (*fk_matrix)(const SerialArmJointArray* joints, SerialArmTransform* T);
     /**
      * @brief 按当前任务行配置求解逆运动学
      * @param target 目标位姿
@@ -289,15 +284,15 @@ typedef struct SerialArmKineInterface {
      * @param seed 迭代初值
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*ik)(const SerialArmPose* target, SerialArmJointArray* joints,
-        const SerialArmJointArray* seed);
+    SerialArmStatus (*ik)(const SerialArmPose* target, SerialArmJointArray* joints,
+                          const SerialArmJointArray* seed);
     /**
      * @brief 搜索多组可行逆解
      * @param target 目标位姿
      * @param solutions 输出逆解集合
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*all_ik)(const SerialArmPose* target, SerialArmJointSolutions* solutions);
+    SerialArmStatus (*all_ik)(const SerialArmPose* target, SerialArmJointSolutions* solutions);
     /**
      * @brief 从逆解集合中选取指定解
      * @param solutions 逆解集合
@@ -311,14 +306,14 @@ typedef struct SerialArmKineInterface {
      * @param quat 输出四元数
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*rpy_to_quat)(const SerialArmRPY rpy, SerialArmQuaternion* quat);
+    SerialArmStatus (*rpy_to_quat)(const SerialArmRPY rpy, SerialArmQuaternion* quat);
     /**
      * @brief 将四元数转换为 RPY 欧拉角
      * @param quat 输入四元数
      * @param rpy 输出 RPY 欧拉角，单位 rad
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*quat_to_rpy)(const SerialArmQuaternion quat, SerialArmRPY* rpy);
+    SerialArmStatus (*quat_to_rpy)(const SerialArmQuaternion quat, SerialArmRPY* rpy);
     /**
      * @brief 由位置和 RPY 欧拉角构造目标位姿
      * @param x 目标 x，单位 m
@@ -330,8 +325,8 @@ typedef struct SerialArmKineInterface {
      * @param pose 输出位姿
      * @return SerialArmStatus 运动学状态码
      */
-    SerialArmStatus(*pose_from_xyz_rpy)(float x, float y, float z,
-        float roll, float pitch, float yaw, SerialArmPose* pose);
+    SerialArmStatus (*pose_from_xyz_rpy)(float x, float y, float z,
+                                         float roll, float pitch, float yaw, SerialArmPose* pose);
 } SerialArmKineInterface;
 
 /**
@@ -343,11 +338,11 @@ extern const SerialArmKineInterface serial_arm_kine_instance;
 
 SerialArmStatus s_serial_arm_model_reset(SerialArmModel* model, uint8_t dof, SerialArmDhConvention convention);
 SerialArmStatus s_serial_arm_model_set_revolute(SerialArmModel* model, uint8_t index,
-    float theta_home, float d, float a, float alpha,
-    float q_offset, float q_min, float q_max);
+                                                float theta_home, float d, float a, float alpha,
+                                                float q_offset, float q_min, float q_max);
 SerialArmStatus s_serial_arm_model_set_prismatic(SerialArmModel* model, uint8_t index,
-    float theta, float d_home, float a, float alpha,
-    float q_offset, float q_min, float q_max);
+                                                 float theta, float d_home, float a, float alpha,
+                                                 float q_offset, float q_min, float q_max);
 SerialArmStatus s_serial_arm_model_set_joint_sign(SerialArmModel* model, uint8_t index, float q_sign);
 SerialArmStatus s_serial_arm_init(const SerialArmModel* model);
 SerialArmStatus s_serial_arm_get_task_info(SerialArmTaskInfo* info);
@@ -367,12 +362,12 @@ const char* s_serial_arm_status_str(SerialArmStatus status);
 SerialArmStatus s_serial_arm_fk(const SerialArmJointArray* joints, SerialArmPose* pose);
 SerialArmStatus s_serial_arm_fk_matrix(const SerialArmJointArray* joints, SerialArmTransform* T);
 SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray* joints,
-    const SerialArmJointArray* seed);
+                                const SerialArmJointArray* seed);
 SerialArmStatus s_serial_arm_all_ik(const SerialArmPose* target, SerialArmJointSolutions* solutions);
 SerialArmJointArray* s_serial_arm_solution_select(SerialArmJointSolutions* solutions, uint8_t index);
 SerialArmStatus s_serial_arm_rpy_to_quat(const SerialArmRPY rpy, SerialArmQuaternion* quat);
 SerialArmStatus s_serial_arm_quat_to_rpy(const SerialArmQuaternion quat, SerialArmRPY* rpy);
 SerialArmStatus s_serial_arm_pose_from_xyz_rpy(float x, float y, float z,
-    float roll, float pitch, float yaw, SerialArmPose* pose);
+                                               float roll, float pitch, float yaw, SerialArmPose* pose);
 
 #endif

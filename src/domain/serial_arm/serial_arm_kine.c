@@ -1,7 +1,3 @@
-/**
- * @file serial_arm_kine.c
- * @brief 通用串联机械臂 MDH/FK/IK 实现
- */
 #include "serial_arm_kine.h"
 
 #include <math.h>
@@ -72,17 +68,19 @@ static bool s_validate_joints(const SerialArmJointArray* joints);
  */
 static bool s_validate_task_info(const SerialArmTaskInfo* info);
 static bool s_solve_linear(uint8_t n, float A[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_TASK_MAX_DIM],
-    float b[SERIAL_ARM_TASK_MAX_DIM], float x[SERIAL_ARM_TASK_MAX_DIM]);
+                           float b[SERIAL_ARM_TASK_MAX_DIM], float x[SERIAL_ARM_TASK_MAX_DIM]);
 static bool s_dls_step(const float J[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_MAX_DOF],
-    const float err[SERIAL_ARM_TASK_MAX_DIM], uint8_t rows, uint8_t cols,
-    float damping, float dq[SERIAL_ARM_MAX_DOF]);
+                       const float err[SERIAL_ARM_TASK_MAX_DIM], uint8_t rows, uint8_t cols,
+                       float damping, float dq[SERIAL_ARM_MAX_DOF]);
 static bool s_solution_is_unique(const SerialArmJointSolutions* sols, const SerialArmJointArray* candidate);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 SerialArmStatus s_serial_arm_model_reset(SerialArmModel* model, uint8_t dof, SerialArmDhConvention convention) {
-    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
-    if(dof == 0u || dof > SERIAL_ARM_MAX_DOF) return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(model == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
+    if(dof == 0u || dof > SERIAL_ARM_MAX_DOF)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
     if(convention != SERIAL_ARM_DH_STANDARD && convention != SERIAL_ARM_DH_MODIFIED)
         return SERIAL_ARM_STATUS_INVALID_MODEL;
 
@@ -111,11 +109,14 @@ SerialArmStatus s_serial_arm_model_reset(SerialArmModel* model, uint8_t dof, Ser
 }
 
 SerialArmStatus s_serial_arm_model_set_revolute(SerialArmModel* model, uint8_t index,
-    float theta_home, float d, float a, float alpha,
-    float q_offset, float q_min, float q_max) {
-    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
-    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF) return SERIAL_ARM_STATUS_INVALID_MODEL;
-    if(q_min > q_max) return SERIAL_ARM_STATUS_INVALID_MODEL;
+                                                float theta_home, float d, float a, float alpha,
+                                                float q_offset, float q_min, float q_max) {
+    if(model == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
+    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(q_min > q_max)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
 
     model->link[index].type = SERIAL_ARM_JOINT_REVOLUTE;
     model->link[index].theta = theta_home;
@@ -130,11 +131,14 @@ SerialArmStatus s_serial_arm_model_set_revolute(SerialArmModel* model, uint8_t i
 }
 
 SerialArmStatus s_serial_arm_model_set_prismatic(SerialArmModel* model, uint8_t index,
-    float theta, float d_home, float a, float alpha,
-    float q_offset, float q_min, float q_max) {
-    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
-    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF) return SERIAL_ARM_STATUS_INVALID_MODEL;
-    if(q_min > q_max) return SERIAL_ARM_STATUS_INVALID_MODEL;
+                                                 float theta, float d_home, float a, float alpha,
+                                                 float q_offset, float q_min, float q_max) {
+    if(model == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
+    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(q_min > q_max)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
 
     model->link[index].type = SERIAL_ARM_JOINT_PRISMATIC;
     model->link[index].theta = theta;
@@ -149,15 +153,18 @@ SerialArmStatus s_serial_arm_model_set_prismatic(SerialArmModel* model, uint8_t 
 }
 
 SerialArmStatus s_serial_arm_model_set_joint_sign(SerialArmModel* model, uint8_t index, float q_sign) {
-    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
-    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF) return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(model == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
+    if(index >= model->dof || index >= SERIAL_ARM_MAX_DOF)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
 
     model->link[index].q_sign = (q_sign < 0.0f) ? -1.0f : 1.0f;
     return SERIAL_ARM_STATUS_SUCCESS;
 }
 
 SerialArmStatus s_serial_arm_init(const SerialArmModel* model) {
-    if(!s_validate_model(model)) return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(!s_validate_model(model))
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
     s_model = *model;
     s_initialized = true;
     s_auto_select_task_rows();
@@ -165,8 +172,10 @@ SerialArmStatus s_serial_arm_init(const SerialArmModel* model) {
 }
 
 SerialArmStatus s_serial_arm_get_task_info(SerialArmTaskInfo* info) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(info == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(info == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
     *info = s_task;
     return SERIAL_ARM_STATUS_SUCCESS;
 }
@@ -177,8 +186,10 @@ SerialArmStatus s_serial_arm_get_task_info(SerialArmTaskInfo* info) {
  * @return SerialArmStatus 运动学状态码
  */
 SerialArmStatus s_serial_arm_set_task_info(const SerialArmTaskInfo* info) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(!s_validate_task_info(info)) return SERIAL_ARM_STATUS_INVALID_MODEL;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_validate_task_info(info))
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
 
     s_task = *info;
     return SERIAL_ARM_STATUS_SUCCESS;
@@ -189,7 +200,8 @@ SerialArmStatus s_serial_arm_set_task_info(const SerialArmTaskInfo* info) {
  * @return SerialArmStatus 运动学状态码
  */
 SerialArmStatus s_serial_arm_reset_task_info(void) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
 
     s_auto_select_task_rows();
     return SERIAL_ARM_STATUS_SUCCESS;
@@ -197,54 +209,80 @@ SerialArmStatus s_serial_arm_reset_task_info(void) {
 
 const char* s_serial_arm_task_row_name(uint8_t row) {
     switch(row) {
-        case 0u: return "x";
-        case 1u: return "y";
-        case 2u: return "z";
-        case 3u: return "rx";
-        case 4u: return "ry";
-        case 5u: return "rz";
-        default: return "unknown";
+        case 0u:
+            return "x";
+        case 1u:
+            return "y";
+        case 2u:
+            return "z";
+        case 3u:
+            return "rx";
+        case 4u:
+            return "ry";
+        case 5u:
+            return "rz";
+        default:
+            return "unknown";
     }
 }
 
 const char* s_serial_arm_status_str(SerialArmStatus status) {
     switch(status) {
-        case SERIAL_ARM_STATUS_SUCCESS: return "SERIAL_ARM_STATUS_SUCCESS";
-        case SERIAL_ARM_STATUS_ERROR: return "SERIAL_ARM_STATUS_ERROR";
-        case SERIAL_ARM_STATUS_NOT_INITIALIZED: return "SERIAL_ARM_STATUS_NOT_INITIALIZED";
-        case SERIAL_ARM_STATUS_INVALID_MODEL: return "SERIAL_ARM_STATUS_INVALID_MODEL";
-        case SERIAL_ARM_STATUS_INVALID_JOINTS: return "SERIAL_ARM_STATUS_INVALID_JOINTS";
-        case SERIAL_ARM_STATUS_INVALID_POSE: return "SERIAL_ARM_STATUS_INVALID_POSE";
-        case SERIAL_ARM_STATUS_SINGULARITY: return "SERIAL_ARM_STATUS_SINGULARITY";
-        case SERIAL_ARM_STATUS_OUT_OF_REACH: return "SERIAL_ARM_STATUS_OUT_OF_REACH";
-        case SERIAL_ARM_STATUS_NO_SOLUTION: return "SERIAL_ARM_STATUS_NO_SOLUTION";
-        default: return "SERIAL_ARM_STATUS_UNKNOWN";
+        case SERIAL_ARM_STATUS_SUCCESS:
+            return "SERIAL_ARM_STATUS_SUCCESS";
+        case SERIAL_ARM_STATUS_ERROR:
+            return "SERIAL_ARM_STATUS_ERROR";
+        case SERIAL_ARM_STATUS_NOT_INITIALIZED:
+            return "SERIAL_ARM_STATUS_NOT_INITIALIZED";
+        case SERIAL_ARM_STATUS_INVALID_MODEL:
+            return "SERIAL_ARM_STATUS_INVALID_MODEL";
+        case SERIAL_ARM_STATUS_INVALID_JOINTS:
+            return "SERIAL_ARM_STATUS_INVALID_JOINTS";
+        case SERIAL_ARM_STATUS_INVALID_POSE:
+            return "SERIAL_ARM_STATUS_INVALID_POSE";
+        case SERIAL_ARM_STATUS_SINGULARITY:
+            return "SERIAL_ARM_STATUS_SINGULARITY";
+        case SERIAL_ARM_STATUS_OUT_OF_REACH:
+            return "SERIAL_ARM_STATUS_OUT_OF_REACH";
+        case SERIAL_ARM_STATUS_NO_SOLUTION:
+            return "SERIAL_ARM_STATUS_NO_SOLUTION";
+        default:
+            return "SERIAL_ARM_STATUS_UNKNOWN";
     }
 }
 
 SerialArmStatus s_serial_arm_fk(const SerialArmJointArray* joints, SerialArmPose* pose) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(!s_validate_joints(joints) || pose == NULL) return SERIAL_ARM_STATUS_INVALID_JOINTS;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_validate_joints(joints) || pose == NULL)
+        return SERIAL_ARM_STATUS_INVALID_JOINTS;
 
     SerialArmTransform T;
     SerialArmStatus ret = s_fk_compute(joints->q, &T);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     s_matrix_to_pose(&T, pose);
     return SERIAL_ARM_STATUS_SUCCESS;
 }
 
 SerialArmStatus s_serial_arm_fk_matrix(const SerialArmJointArray* joints, SerialArmTransform* T) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(!s_validate_joints(joints) || T == NULL) return SERIAL_ARM_STATUS_INVALID_JOINTS;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_validate_joints(joints) || T == NULL)
+        return SERIAL_ARM_STATUS_INVALID_JOINTS;
     return s_fk_compute(joints->q, T);
 }
 
 SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray* joints,
-    const SerialArmJointArray* seed) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(target == NULL || joints == NULL || seed == NULL) return SERIAL_ARM_STATUS_ERROR;
-    if(!s_validate_joints(seed)) return SERIAL_ARM_STATUS_INVALID_JOINTS;
-    if(s_task.task_dim == 0u) return SERIAL_ARM_STATUS_INVALID_MODEL;
+                                const SerialArmJointArray* seed) {
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(target == NULL || joints == NULL || seed == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
+    if(!s_validate_joints(seed))
+        return SERIAL_ARM_STATUS_INVALID_JOINTS;
+    if(s_task.task_dim == 0u)
+        return SERIAL_ARM_STATUS_INVALID_MODEL;
 
     float q[SERIAL_ARM_MAX_DOF] = { 0.0f };
     for(uint8_t i = 0u; i < s_model.dof; i++) {
@@ -262,7 +300,8 @@ SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray
 
     for(uint16_t iter = 0u; iter < max_iter; iter++) {
         SerialArmTransform T;
-        if(s_fk_compute(q, &T) != SERIAL_ARM_STATUS_SUCCESS) return SERIAL_ARM_STATUS_ERROR;
+        if(s_fk_compute(q, &T) != SERIAL_ARM_STATUS_SUCCESS)
+            return SERIAL_ARM_STATUS_ERROR;
 
         float err6[6] = { 0.0f };
         s_compute_full_error(target, &T, err6);
@@ -273,20 +312,23 @@ SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray
         bool need_pos = false;
         bool need_ori = false;
         for(uint8_t r = 0u; r < s_task.task_dim; r++) {
-            if(s_task.row[r] < 3u) need_pos = true;
-            else need_ori = true;
+            if(s_task.row[r] < 3u)
+                need_pos = true;
+            else
+                need_ori = true;
         }
 
         if((!need_pos || pos_norm < pos_tol) && (!need_ori || ori_norm < ori_tol)) {
             joints->dof = s_model.dof;
-            for(uint8_t i = 0u; i < s_model.dof; i++) joints->q[i] = q[i];
+            for(uint8_t i = 0u; i < s_model.dof; i++)
+                joints->q[i] = q[i];
             return SERIAL_ARM_STATUS_SUCCESS;
         }
 
-        float J6[6][SERIAL_ARM_MAX_DOF] = { {0.0f} };
+        float J6[6][SERIAL_ARM_MAX_DOF] = { { 0.0f } };
         s_compute_full_jacobian(q, J6, eps);
 
-        float J[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_MAX_DOF] = { {0.0f} };
+        float J[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_MAX_DOF] = { { 0.0f } };
         float err[SERIAL_ARM_TASK_MAX_DIM] = { 0.0f };
         for(uint8_t r = 0u; r < s_task.task_dim; r++) {
             uint8_t src = s_task.row[r];
@@ -312,24 +354,29 @@ SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray
 }
 
 SerialArmStatus s_serial_arm_all_ik(const SerialArmPose* target, SerialArmJointSolutions* solutions) {
-    if(!s_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
-    if(target == NULL || solutions == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(!s_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(target == NULL || solutions == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
 
     memset(solutions, 0, sizeof(*solutions));
 
     const float ratio[3] = { 0.0f, 0.5f, -0.5f };
     uint32_t trial_count = 1u;
-    for(uint8_t i = 0u; i < s_model.dof && i < 5u; i++) trial_count *= 3u;
+    for(uint8_t i = 0u; i < s_model.dof && i < 5u; i++)
+        trial_count *= 3u;
 
     for(uint32_t t = 0u; t < trial_count; t++) {
-        if(solutions->num_solutions >= SERIAL_ARM_MAX_SOLUTIONS) break;
+        if(solutions->num_solutions >= SERIAL_ARM_MAX_SOLUTIONS)
+            break;
 
         uint32_t code = t;
         SerialArmJointArray seed = { 0 };
         seed.dof = s_model.dof;
         for(uint8_t j = 0u; j < s_model.dof; j++) {
             uint8_t r = (j < 5u) ? (uint8_t)(code % 3u) : 0u;
-            if(j < 5u) code /= 3u;
+            if(j < 5u)
+                code /= 3u;
             float mid = 0.5f * (s_model.link[j].q_min + s_model.link[j].q_max);
             float span = 0.5f * (s_model.link[j].q_max - s_model.link[j].q_min);
             seed.q[j] = mid + ratio[r] * span;
@@ -337,8 +384,10 @@ SerialArmStatus s_serial_arm_all_ik(const SerialArmPose* target, SerialArmJointS
 
         SerialArmJointArray candidate = { 0 };
         SerialArmStatus ret = s_serial_arm_ik(target, &candidate, &seed);
-        if(ret != SERIAL_ARM_STATUS_SUCCESS) continue;
-        if(!s_solution_is_unique(solutions, &candidate)) continue;
+        if(ret != SERIAL_ARM_STATUS_SUCCESS)
+            continue;
+        if(!s_solution_is_unique(solutions, &candidate))
+            continue;
 
         solutions->solution[solutions->num_solutions] = candidate;
         solutions->num_solutions++;
@@ -354,7 +403,8 @@ SerialArmJointArray* s_serial_arm_solution_select(SerialArmJointSolutions* solut
 }
 
 SerialArmStatus s_serial_arm_rpy_to_quat(const SerialArmRPY rpy, SerialArmQuaternion* quat) {
-    if(quat == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(quat == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
 
     float cx = cosf(rpy.roll * 0.5f);
     float sx = sinf(rpy.roll * 0.5f);
@@ -371,15 +421,18 @@ SerialArmStatus s_serial_arm_rpy_to_quat(const SerialArmRPY rpy, SerialArmQuater
 }
 
 SerialArmStatus s_serial_arm_quat_to_rpy(const SerialArmQuaternion quat, SerialArmRPY* rpy) {
-    if(rpy == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(rpy == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
 
     float sinr_cosp = 2.0f * (quat.w * quat.x + quat.y * quat.z);
     float cosr_cosp = 1.0f - 2.0f * (quat.x * quat.x + quat.y * quat.y);
     rpy->roll = atan2f(sinr_cosp, cosr_cosp);
 
     float sinp = 2.0f * (quat.w * quat.y - quat.z * quat.x);
-    if(fabsf(sinp) >= 1.0f) rpy->pitch = copysignf(M_PI * 0.5f, sinp);
-    else rpy->pitch = asinf(sinp);
+    if(fabsf(sinp) >= 1.0f)
+        rpy->pitch = copysignf(M_PI * 0.5f, sinp);
+    else
+        rpy->pitch = asinf(sinp);
 
     float siny_cosp = 2.0f * (quat.w * quat.z + quat.x * quat.y);
     float cosy_cosp = 1.0f - 2.0f * (quat.y * quat.y + quat.z * quat.z);
@@ -388,8 +441,9 @@ SerialArmStatus s_serial_arm_quat_to_rpy(const SerialArmQuaternion quat, SerialA
 }
 
 SerialArmStatus s_serial_arm_pose_from_xyz_rpy(float x, float y, float z,
-    float roll, float pitch, float yaw, SerialArmPose* pose) {
-    if(pose == NULL) return SERIAL_ARM_STATUS_ERROR;
+                                               float roll, float pitch, float yaw, SerialArmPose* pose) {
+    if(pose == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
     pose->position.x = x;
     pose->position.y = y;
     pose->position.z = z;
@@ -400,14 +454,18 @@ SerialArmStatus s_serial_arm_pose_from_xyz_rpy(float x, float y, float z,
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 static float s_clampf(float v, float lo, float hi) {
-    if(v < lo) return lo;
-    if(v > hi) return hi;
+    if(v < lo)
+        return lo;
+    if(v > hi)
+        return hi;
     return v;
 }
 
 static float s_wrap_pi(float x) {
-    while(x > M_PI) x -= M_2PI;
-    while(x < -M_PI) x += M_2PI;
+    while(x > M_PI)
+        x -= M_2PI;
+    while(x < -M_PI)
+        x += M_2PI;
     return x;
 }
 
@@ -424,7 +482,8 @@ static void s_tf_mul(const SerialArmTransform* A, const SerialArmTransform* B, S
     for(uint8_t i = 0u; i < 4u; i++) {
         for(uint8_t j = 0u; j < 4u; j++) {
             tmp.m[i][j] = 0.0f;
-            for(uint8_t k = 0u; k < 4u; k++) tmp.m[i][j] += A->m[i][k] * B->m[k][j];
+            for(uint8_t k = 0u; k < 4u; k++)
+                tmp.m[i][j] += A->m[i][k] * B->m[k][j];
         }
     }
     *out = tmp;
@@ -435,16 +494,30 @@ static void s_dh_standard_tf(const SerialArmLink* link, float q_user, SerialArmT
     float d = link->d;
     float q_sign = (link->q_sign < 0.0f) ? -1.0f : 1.0f;
     float q = q_sign * q_user + link->q_offset;
-    if(link->type == SERIAL_ARM_JOINT_REVOLUTE) theta += q;
-    else d += q;
+    if(link->type == SERIAL_ARM_JOINT_REVOLUTE)
+        theta += q;
+    else
+        d += q;
 
     float ct = cosf(theta), st = sinf(theta);
     float ca = cosf(link->alpha), sa = sinf(link->alpha);
 
-    T->m[0][0] = ct;       T->m[0][1] = -st * ca;  T->m[0][2] = st * sa;   T->m[0][3] = link->a * ct;
-    T->m[1][0] = st;       T->m[1][1] = ct * ca;   T->m[1][2] = -ct * sa;  T->m[1][3] = link->a * st;
-    T->m[2][0] = 0.0f;     T->m[2][1] = sa;        T->m[2][2] = ca;        T->m[2][3] = d;
-    T->m[3][0] = 0.0f;     T->m[3][1] = 0.0f;      T->m[3][2] = 0.0f;      T->m[3][3] = 1.0f;
+    T->m[0][0] = ct;
+    T->m[0][1] = -st * ca;
+    T->m[0][2] = st * sa;
+    T->m[0][3] = link->a * ct;
+    T->m[1][0] = st;
+    T->m[1][1] = ct * ca;
+    T->m[1][2] = -ct * sa;
+    T->m[1][3] = link->a * st;
+    T->m[2][0] = 0.0f;
+    T->m[2][1] = sa;
+    T->m[2][2] = ca;
+    T->m[2][3] = d;
+    T->m[3][0] = 0.0f;
+    T->m[3][1] = 0.0f;
+    T->m[3][2] = 0.0f;
+    T->m[3][3] = 1.0f;
 }
 
 static void s_dh_modified_tf(const SerialArmLink* link, float q_user, SerialArmTransform* T) {
@@ -452,26 +525,43 @@ static void s_dh_modified_tf(const SerialArmLink* link, float q_user, SerialArmT
     float d = link->d;
     float q_sign = (link->q_sign < 0.0f) ? -1.0f : 1.0f;
     float q = q_sign * q_user + link->q_offset;
-    if(link->type == SERIAL_ARM_JOINT_REVOLUTE) theta += q;
-    else d += q;
+    if(link->type == SERIAL_ARM_JOINT_REVOLUTE)
+        theta += q;
+    else
+        d += q;
 
     float ct = cosf(theta), st = sinf(theta);
     float ca = cosf(link->alpha), sa = sinf(link->alpha);
 
-    T->m[0][0] = ct;       T->m[0][1] = -st;       T->m[0][2] = 0.0f;      T->m[0][3] = link->a;
-    T->m[1][0] = st * ca;  T->m[1][1] = ct * ca;   T->m[1][2] = -sa;       T->m[1][3] = -d * sa;
-    T->m[2][0] = st * sa;  T->m[2][1] = ct * sa;   T->m[2][2] = ca;        T->m[2][3] = d * ca;
-    T->m[3][0] = 0.0f;     T->m[3][1] = 0.0f;      T->m[3][2] = 0.0f;      T->m[3][3] = 1.0f;
+    T->m[0][0] = ct;
+    T->m[0][1] = -st;
+    T->m[0][2] = 0.0f;
+    T->m[0][3] = link->a;
+    T->m[1][0] = st * ca;
+    T->m[1][1] = ct * ca;
+    T->m[1][2] = -sa;
+    T->m[1][3] = -d * sa;
+    T->m[2][0] = st * sa;
+    T->m[2][1] = ct * sa;
+    T->m[2][2] = ca;
+    T->m[2][3] = d * ca;
+    T->m[3][0] = 0.0f;
+    T->m[3][1] = 0.0f;
+    T->m[3][2] = 0.0f;
+    T->m[3][3] = 1.0f;
 }
 
 static SerialArmStatus s_fk_compute(const float q[SERIAL_ARM_MAX_DOF], SerialArmTransform* T_out) {
-    if(T_out == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(T_out == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
 
     SerialArmTransform T = s_model.base_T;
     for(uint8_t i = 0u; i < s_model.dof; i++) {
         SerialArmTransform A;
-        if(s_model.convention == SERIAL_ARM_DH_STANDARD) s_dh_standard_tf(&s_model.link[i], q[i], &A);
-        else s_dh_modified_tf(&s_model.link[i], q[i], &A);
+        if(s_model.convention == SERIAL_ARM_DH_STANDARD)
+            s_dh_standard_tf(&s_model.link[i], q[i], &A);
+        else
+            s_dh_modified_tf(&s_model.link[i], q[i], &A);
         s_tf_mul(&T, &A, &T);
     }
     s_tf_mul(&T, &s_model.tool_T, &T);
@@ -527,7 +617,10 @@ static void s_pose_to_rotation(const SerialArmPose* pose, float R[3][3]) {
 
     float n = sqrtf(qw * qw + qx * qx + qy * qy + qz * qz);
     if(n > 1e-9f) {
-        qw /= n; qx /= n; qy /= n; qz /= n;
+        qw /= n;
+        qx /= n;
+        qy /= n;
+        qz /= n;
     }
 
     R[0][0] = 1.0f - 2.0f * (qy * qy + qz * qz);
@@ -543,15 +636,17 @@ static void s_pose_to_rotation(const SerialArmPose* pose, float R[3][3]) {
 
 static void s_extract_rotation(const SerialArmTransform* T, float R[3][3]) {
     for(uint8_t i = 0u; i < 3u; i++) {
-        for(uint8_t j = 0u; j < 3u; j++) R[i][j] = T->m[i][j];
+        for(uint8_t j = 0u; j < 3u; j++)
+            R[i][j] = T->m[i][j];
     }
 }
 
 static void s_rotation_error(const float Rd[3][3], const float R[3][3], float eo[3]) {
-    float Re[3][3] = { {0.0f} };
+    float Re[3][3] = { { 0.0f } };
     for(uint8_t i = 0u; i < 3u; i++) {
         for(uint8_t j = 0u; j < 3u; j++) {
-            for(uint8_t k = 0u; k < 3u; k++) Re[i][j] += Rd[i][k] * R[j][k];
+            for(uint8_t k = 0u; k < 3u; k++)
+                Re[i][j] += Rd[i][k] * R[j][k];
         }
     }
     eo[0] = 0.5f * (Re[2][1] - Re[1][2]);
@@ -560,10 +655,11 @@ static void s_rotation_error(const float Rd[3][3], const float R[3][3], float eo
 }
 
 static void s_angular_jacobian_col(const float R[3][3], const float R2[3][3], float omega[3], float eps) {
-    float dR[3][3] = { {0.0f} };
+    float dR[3][3] = { { 0.0f } };
     for(uint8_t i = 0u; i < 3u; i++) {
         for(uint8_t j = 0u; j < 3u; j++) {
-            for(uint8_t k = 0u; k < 3u; k++) dR[i][j] += R[k][i] * R2[k][j];
+            for(uint8_t k = 0u; k < 3u; k++)
+                dR[i][j] += R[k][i] * R2[k][j];
         }
     }
     float inv2eps = 1.0f / (2.0f * eps);
@@ -594,7 +690,8 @@ static void s_compute_full_jacobian(const float q[SERIAL_ARM_MAX_DOF], float J6[
 
     for(uint8_t c = 0u; c < s_model.dof; c++) {
         float q2[SERIAL_ARM_MAX_DOF] = { 0.0f };
-        for(uint8_t i = 0u; i < s_model.dof; i++) q2[i] = q[i];
+        for(uint8_t i = 0u; i < s_model.dof; i++)
+            q2[i] = q[i];
         q2[c] += eps;
 
         SerialArmTransform T2;
@@ -617,11 +714,13 @@ static void s_compute_full_jacobian(const float q[SERIAL_ARM_MAX_DOF], float J6[
 static void s_auto_select_task_rows(void) {
     memset(&s_task, 0, sizeof(s_task));
     uint8_t dim = s_model.dof;
-    if(dim > SERIAL_ARM_TASK_MAX_DIM) dim = SERIAL_ARM_TASK_MAX_DIM;
+    if(dim > SERIAL_ARM_TASK_MAX_DIM)
+        dim = SERIAL_ARM_TASK_MAX_DIM;
     s_task.task_dim = dim;
 
     if(dim >= 6u) {
-        for(uint8_t i = 0u; i < 6u; i++) s_task.row[i] = i;
+        for(uint8_t i = 0u; i < 6u; i++)
+            s_task.row[i] = i;
         return;
     }
 
@@ -631,7 +730,8 @@ static void s_auto_select_task_rows(void) {
         s_task.row[2] = 2u;
 
         uint8_t selected = 3u;
-        if(selected >= dim) return;
+        if(selected >= dim)
+            return;
 
         float q[SERIAL_ARM_MAX_DOF] = { 0.0f };
         for(uint8_t i = 0u; i < s_model.dof; i++) {
@@ -640,7 +740,7 @@ static void s_auto_select_task_rows(void) {
             }
         }
 
-        float J6[6][SERIAL_ARM_MAX_DOF] = { {0.0f} };
+        float J6[6][SERIAL_ARM_MAX_DOF] = { { 0.0f } };
         s_compute_full_jacobian(q, J6, (s_model.ik.numeric_eps > 0.0f) ? s_model.ik.numeric_eps : 1e-5f);
 
         bool used[6] = { true, true, true, false, false, false };
@@ -648,9 +748,11 @@ static void s_auto_select_task_rows(void) {
             uint8_t best_row = 3u;
             float best_score = -1.0f;
             for(uint8_t r = 3u; r < 6u; r++) {
-                if(used[r]) continue;
+                if(used[r])
+                    continue;
                 float score = 0.0f;
-                for(uint8_t c = 0u; c < s_model.dof; c++) score += fabsf(J6[r][c]);
+                for(uint8_t c = 0u; c < s_model.dof; c++)
+                    score += fabsf(J6[r][c]);
                 if(score > best_score) {
                     best_score = score;
                     best_row = r;
@@ -664,7 +766,7 @@ static void s_auto_select_task_rows(void) {
 
     // 低自由度机械臂：选择最可控的位置坐标行
     float q[SERIAL_ARM_MAX_DOF] = { 0.0f };
-    float J6[6][SERIAL_ARM_MAX_DOF] = { {0.0f} };
+    float J6[6][SERIAL_ARM_MAX_DOF] = { { 0.0f } };
     s_compute_full_jacobian(q, J6, (s_model.ik.numeric_eps > 0.0f) ? s_model.ik.numeric_eps : 1e-5f);
 
     bool used[3] = { false, false, false };
@@ -672,9 +774,11 @@ static void s_auto_select_task_rows(void) {
         uint8_t best_row = 0u;
         float best_score = -1.0f;
         for(uint8_t r = 0u; r < 3u; r++) {
-            if(used[r]) continue;
+            if(used[r])
+                continue;
             float score = 0.0f;
-            for(uint8_t c = 0u; c < s_model.dof; c++) score += fabsf(J6[r][c]);
+            for(uint8_t c = 0u; c < s_model.dof; c++)
+                score += fabsf(J6[r][c]);
             if(score > best_score) {
                 best_score = score;
                 best_row = r;
@@ -686,34 +790,47 @@ static void s_auto_select_task_rows(void) {
 }
 
 static bool s_validate_model(const SerialArmModel* model) {
-    if(model == NULL) return false;
-    if(model->dof == 0u || model->dof > SERIAL_ARM_MAX_DOF) return false;
-    if(model->convention != SERIAL_ARM_DH_STANDARD && model->convention != SERIAL_ARM_DH_MODIFIED) return false;
+    if(model == NULL)
+        return false;
+    if(model->dof == 0u || model->dof > SERIAL_ARM_MAX_DOF)
+        return false;
+    if(model->convention != SERIAL_ARM_DH_STANDARD && model->convention != SERIAL_ARM_DH_MODIFIED)
+        return false;
     for(uint8_t i = 0u; i < model->dof; i++) {
-        if(model->link[i].q_min > model->link[i].q_max) return false;
-        if(model->link[i].type != SERIAL_ARM_JOINT_REVOLUTE && model->link[i].type != SERIAL_ARM_JOINT_PRISMATIC) return false;
-        if(model->link[i].q_sign == 0.0f) return false;
+        if(model->link[i].q_min > model->link[i].q_max)
+            return false;
+        if(model->link[i].type != SERIAL_ARM_JOINT_REVOLUTE && model->link[i].type != SERIAL_ARM_JOINT_PRISMATIC)
+            return false;
+        if(model->link[i].q_sign == 0.0f)
+            return false;
     }
     return true;
 }
 
 static bool s_validate_joints(const SerialArmJointArray* joints) {
-    if(joints == NULL) return false;
-    if(joints->dof != s_model.dof) return false;
+    if(joints == NULL)
+        return false;
+    if(joints->dof != s_model.dof)
+        return false;
     return true;
 }
 
 static bool s_validate_task_info(const SerialArmTaskInfo* info) {
     bool used[SERIAL_ARM_TASK_MAX_DIM] = { false };
 
-    if(info == NULL) return false;
-    if(info->task_dim == 0u || info->task_dim > SERIAL_ARM_TASK_MAX_DIM) return false;
-    if(info->task_dim > s_model.dof) return false;
+    if(info == NULL)
+        return false;
+    if(info->task_dim == 0u || info->task_dim > SERIAL_ARM_TASK_MAX_DIM)
+        return false;
+    if(info->task_dim > s_model.dof)
+        return false;
 
     for(uint8_t i = 0u; i < info->task_dim; i++) {
         uint8_t row = info->row[i];
-        if(row >= SERIAL_ARM_TASK_MAX_DIM) return false;
-        if(used[row]) return false;
+        if(row >= SERIAL_ARM_TASK_MAX_DIM)
+            return false;
+        if(used[row])
+            return false;
         used[row] = true;
     }
 
@@ -721,61 +838,77 @@ static bool s_validate_task_info(const SerialArmTaskInfo* info) {
 }
 
 static bool s_solve_linear(uint8_t n, float A[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_TASK_MAX_DIM],
-    float b[SERIAL_ARM_TASK_MAX_DIM], float x[SERIAL_ARM_TASK_MAX_DIM]) {
-    for(uint8_t i = 0u; i < n; i++) x[i] = 0.0f;
+                           float b[SERIAL_ARM_TASK_MAX_DIM], float x[SERIAL_ARM_TASK_MAX_DIM]) {
+    for(uint8_t i = 0u; i < n; i++)
+        x[i] = 0.0f;
 
     for(uint8_t k = 0u; k < n; k++) {
         uint8_t pivot = k;
         float max_abs = fabsf(A[k][k]);
         for(uint8_t r = (uint8_t)(k + 1u); r < n; r++) {
             float v = fabsf(A[r][k]);
-            if(v > max_abs) { max_abs = v; pivot = r; }
+            if(v > max_abs) {
+                max_abs = v;
+                pivot = r;
+            }
         }
-        if(max_abs < 1e-9f) return false;
+        if(max_abs < 1e-9f)
+            return false;
 
         if(pivot != k) {
             for(uint8_t c = 0u; c < n; c++) {
-                float tmp = A[k][c]; A[k][c] = A[pivot][c]; A[pivot][c] = tmp;
+                float tmp = A[k][c];
+                A[k][c] = A[pivot][c];
+                A[pivot][c] = tmp;
             }
-            float tb = b[k]; b[k] = b[pivot]; b[pivot] = tb;
+            float tb = b[k];
+            b[k] = b[pivot];
+            b[pivot] = tb;
         }
 
         float diag = A[k][k];
-        for(uint8_t c = k; c < n; c++) A[k][c] /= diag;
+        for(uint8_t c = k; c < n; c++)
+            A[k][c] /= diag;
         b[k] /= diag;
 
         for(uint8_t r = 0u; r < n; r++) {
-            if(r == k) continue;
+            if(r == k)
+                continue;
             float factor = A[r][k];
-            for(uint8_t c = k; c < n; c++) A[r][c] -= factor * A[k][c];
+            for(uint8_t c = k; c < n; c++)
+                A[r][c] -= factor * A[k][c];
             b[r] -= factor * b[k];
         }
     }
 
-    for(uint8_t i = 0u; i < n; i++) x[i] = b[i];
+    for(uint8_t i = 0u; i < n; i++)
+        x[i] = b[i];
     return true;
 }
 
 static bool s_dls_step(const float J[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_MAX_DOF],
-    const float err[SERIAL_ARM_TASK_MAX_DIM], uint8_t rows, uint8_t cols,
-    float damping, float dq[SERIAL_ARM_MAX_DOF]) {
-    float A[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_TASK_MAX_DIM] = { {0.0f} };
+                       const float err[SERIAL_ARM_TASK_MAX_DIM], uint8_t rows, uint8_t cols,
+                       float damping, float dq[SERIAL_ARM_MAX_DOF]) {
+    float A[SERIAL_ARM_TASK_MAX_DIM][SERIAL_ARM_TASK_MAX_DIM] = { { 0.0f } };
     float y[SERIAL_ARM_TASK_MAX_DIM] = { 0.0f };
 
     for(uint8_t r = 0u; r < rows; r++) {
         for(uint8_t c = 0u; c < rows; c++) {
-            for(uint8_t k = 0u; k < cols; k++) A[r][c] += J[r][k] * J[c][k];
+            for(uint8_t k = 0u; k < cols; k++)
+                A[r][c] += J[r][k] * J[c][k];
         }
         A[r][r] += damping * damping;
         y[r] = err[r];
     }
 
     float z[SERIAL_ARM_TASK_MAX_DIM] = { 0.0f };
-    if(!s_solve_linear(rows, A, y, z)) return false;
+    if(!s_solve_linear(rows, A, y, z))
+        return false;
 
     for(uint8_t c = 0u; c < cols; c++) {
         dq[c] = 0.0f;
-        for(uint8_t r = 0u; r < rows; r++) dq[c] += J[r][c] * z[r];
+        for(uint8_t r = 0u; r < rows; r++)
+            dq[c] += J[r][c] * z[r];
     }
     return true;
 }
@@ -790,7 +923,8 @@ static bool s_solution_is_unique(const SerialArmJointSolutions* sols, const Seri
                 break;
             }
         }
-        if(same) return false;
+        if(same)
+            return false;
     }
     return true;
 }

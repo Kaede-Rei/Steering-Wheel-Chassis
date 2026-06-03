@@ -1,7 +1,3 @@
-/**
- * @file five_dof_arm_kine.c
- * @brief 五自由度机械臂纯数学 MDH 模型实现
- */
 #include "serial_arm/five_dof_arm_kine.h"
 
 #include <string.h>
@@ -78,7 +74,7 @@ static void s_tf_transl(SerialArmTransform* T, float x, float y, float z);
  * @return FiveDofArmStatus 领域层状态码
  */
 static FiveDofArmStatus s_set_revolute_checked(SerialArmModel* model, uint8_t index,
-    float theta, float d, float a, float alpha, float offset, float sign);
+                                               float theta, float d, float a, float alpha, float offset, float sign);
 /**
  * @brief 用给定数组填充五自由度关节结构体
  * @param joints 输出关节数组
@@ -111,24 +107,31 @@ const FiveDofArmKineInterface five_dof_arm_kine_instance = {
 FiveDofArmStatus five_dof_arm_build_model(SerialArmModel* model) {
     FiveDofArmStatus ret;
 
-    if(model == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(model == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
 
     ret = serial_arm.model_reset(model, FIVE_DOF_ARM_DOF, SERIAL_ARM_DH_MODIFIED);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
 
     s_tf_transl(&model->base_T, S_BASE_X, S_BASE_Y, 0.0f);
     s_tf_transl(&model->tool_T, S_TCP_LEN, 0.0f, 0.0f);
 
     ret = s_set_revolute_checked(model, 0u, 0.0f, S_H0, 0.0f, 0.0f, 0.0f, 1.0f);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     ret = s_set_revolute_checked(model, 1u, 0.0f, 0.0f, 0.0f, M_PI * 0.5f, M_PI * 0.5f, 1.0f);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     ret = s_set_revolute_checked(model, 2u, 0.0f, 0.0f, S_L1_LEN, 0.0f, 0.0f, -1.0f);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     ret = s_set_revolute_checked(model, 3u, 0.0f, 0.0f, S_L2_LEN, 0.0f, 0.0f, 1.0f);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     ret = s_set_revolute_checked(model, 4u, 0.0f, 0.0f, S_L3_LEN, 0.0f, 0.0f, -1.0f);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
 
     model->ik.max_iterations = 250.0f;
     model->ik.position_tolerance = 1e-4f;
@@ -174,7 +177,8 @@ const SerialArmModel* five_dof_arm_get_model(void) {
 FiveDofArmStatus five_dof_arm_get_mdh_zero(FiveDofArmJointArray* joints) {
     static const float q[FIVE_DOF_ARM_DOF] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 
-    if(joints == NULL) return SERIAL_ARM_STATUS_ERROR;
+    if(joints == NULL)
+        return SERIAL_ARM_STATUS_ERROR;
     s_fill_joint_array(joints, q);
     return SERIAL_ARM_STATUS_SUCCESS;
 }
@@ -186,7 +190,8 @@ FiveDofArmStatus five_dof_arm_get_mdh_zero(FiveDofArmJointArray* joints) {
  * @return FiveDofArmStatus 领域层状态码
  */
 FiveDofArmStatus five_dof_arm_fk(const FiveDofArmJointArray* joints, FiveDofArmPose* pose) {
-    if(!s_five_dof_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_five_dof_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
     return serial_arm.fk(joints, pose);
 }
 
@@ -197,7 +202,8 @@ FiveDofArmStatus five_dof_arm_fk(const FiveDofArmJointArray* joints, FiveDofArmP
  * @return FiveDofArmStatus 领域层状态码
  */
 FiveDofArmStatus five_dof_arm_fk_matrix(const FiveDofArmJointArray* joints, FiveDofArmTransform* T) {
-    if(!s_five_dof_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_five_dof_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
     return serial_arm.fk_matrix(joints, T);
 }
 
@@ -209,8 +215,9 @@ FiveDofArmStatus five_dof_arm_fk_matrix(const FiveDofArmJointArray* joints, Five
  * @return FiveDofArmStatus 领域层状态码
  */
 FiveDofArmStatus five_dof_arm_ik(const FiveDofArmPose* target, FiveDofArmJointArray* joints,
-    const FiveDofArmJointArray* seed) {
-    if(!s_five_dof_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+                                 const FiveDofArmJointArray* seed) {
+    if(!s_five_dof_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
     return serial_arm.ik(target, joints, seed);
 }
 
@@ -221,7 +228,8 @@ FiveDofArmStatus five_dof_arm_ik(const FiveDofArmPose* target, FiveDofArmJointAr
  * @return FiveDofArmStatus 领域层状态码
  */
 FiveDofArmStatus five_dof_arm_all_ik(const FiveDofArmPose* target, FiveDofArmJointSolutions* solutions) {
-    if(!s_five_dof_initialized) return SERIAL_ARM_STATUS_NOT_INITIALIZED;
+    if(!s_five_dof_initialized)
+        return SERIAL_ARM_STATUS_NOT_INITIALIZED;
     return serial_arm.all_ik(target, solutions);
 }
 
@@ -275,13 +283,14 @@ static void s_tf_transl(SerialArmTransform* T, float x, float y, float z) {
  * @return FiveDofArmStatus 领域层状态码
  */
 static FiveDofArmStatus s_set_revolute_checked(SerialArmModel* model, uint8_t index,
-    float theta, float d, float a, float alpha, float offset, float sign) {
+                                               float theta, float d, float a, float alpha, float offset, float sign) {
     FiveDofArmStatus ret = serial_arm.model_set_revolute(model, index,
-        theta, d, a, alpha,
-        offset,
-        -FIVE_DOF_ARM_Q_LIMIT_RAD,
-        FIVE_DOF_ARM_Q_LIMIT_RAD);
-    if(ret != SERIAL_ARM_STATUS_SUCCESS) return ret;
+                                                         theta, d, a, alpha,
+                                                         offset,
+                                                         -FIVE_DOF_ARM_Q_LIMIT_RAD,
+                                                         FIVE_DOF_ARM_Q_LIMIT_RAD);
+    if(ret != SERIAL_ARM_STATUS_SUCCESS)
+        return ret;
     return serial_arm.model_set_joint_sign(model, index, sign);
 }
 

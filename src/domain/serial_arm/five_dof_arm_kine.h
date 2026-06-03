@@ -1,19 +1,9 @@
 #ifndef _five_dof_arm_kine_h_
 #define _five_dof_arm_kine_h_
 
-/**
- * @file five_dof_arm_kine.h
- * @brief 五自由度机械臂纯数学 MDH 模型接口
- *
- * 本文件只描述五自由度机械臂的数学模型：
- * 连杆几何、关节方向、关节限位、数学零位以及 FK/IK 接口
- * 与具体实物装配相关的默认舵机零位、标定偏置等信息不应放在这里
- */
-
 #include "serial_arm_kine.h"
 
 #include <stdbool.h>
-#include <stdint.h>
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
@@ -61,12 +51,12 @@ typedef struct {
      * @param model 输出模型
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*build_model)(SerialArmModel* model);
+    FiveDofArmStatus (*build_model)(SerialArmModel* model);
     /**
      * @brief 构建模型并初始化通用串联机械臂求解器
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*init)(void);
+    FiveDofArmStatus (*init)(void);
     /**
      * @brief 获取当前只读模型指针
      * @return const SerialArmModel* 模型指针
@@ -77,21 +67,21 @@ typedef struct {
      * @param joints 输出关节数组
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*get_mdh_zero)(FiveDofArmJointArray* joints);
+    FiveDofArmStatus (*get_mdh_zero)(FiveDofArmJointArray* joints);
     /**
      * @brief 计算正运动学并输出位姿
      * @param joints 输入关节数组，单位 rad
      * @param pose 输出位姿
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*fk)(const FiveDofArmJointArray* joints, FiveDofArmPose* pose);
+    FiveDofArmStatus (*fk)(const FiveDofArmJointArray* joints, FiveDofArmPose* pose);
     /**
      * @brief 计算正运动学并输出齐次变换矩阵
      * @param joints 输入关节数组，单位 rad
      * @param T 输出 4x4 齐次变换矩阵
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*fk_matrix)(const FiveDofArmJointArray* joints, FiveDofArmTransform* T);
+    FiveDofArmStatus (*fk_matrix)(const FiveDofArmJointArray* joints, FiveDofArmTransform* T);
     /**
      * @brief 计算单组逆运动学解
      * @param target 目标位姿
@@ -99,15 +89,15 @@ typedef struct {
      * @param seed 逆解初值
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*ik)(const FiveDofArmPose* target, FiveDofArmJointArray* joints,
-        const FiveDofArmJointArray* seed);
+    FiveDofArmStatus (*ik)(const FiveDofArmPose* target, FiveDofArmJointArray* joints,
+                           const FiveDofArmJointArray* seed);
     /**
      * @brief 搜索多组可行逆解
      * @param target 目标位姿
      * @param solutions 输出逆解集合
      * @return FiveDofArmStatus 领域层状态码
      */
-    FiveDofArmStatus(*all_ik)(const FiveDofArmPose* target, FiveDofArmJointSolutions* solutions);
+    FiveDofArmStatus (*all_ik)(const FiveDofArmPose* target, FiveDofArmJointSolutions* solutions);
     /**
      * @brief 将状态码转换为字符串
      * @param status 状态码
@@ -167,7 +157,7 @@ FiveDofArmStatus five_dof_arm_fk_matrix(const FiveDofArmJointArray* joints, Five
  * @return FiveDofArmStatus 领域层状态码
  */
 FiveDofArmStatus five_dof_arm_ik(const FiveDofArmPose* target, FiveDofArmJointArray* joints,
-    const FiveDofArmJointArray* seed);
+                                 const FiveDofArmJointArray* seed);
 /**
  * @brief 搜索多组可行逆解
  * @param target 目标位姿
