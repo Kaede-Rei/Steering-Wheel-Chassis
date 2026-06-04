@@ -7,6 +7,7 @@
 #include "arm.h"
 #include "chassis.h"
 #include "chassis_yaw_hold.h"
+#include "competition.h"
 #include "fs_ia10b.h"
 #include "imu/imu.h"
 #include "mission.h"
@@ -29,124 +30,124 @@
 /**
  * @brief 左摇杆横向通道索引
  */
-#define REMOTE_CH_LEFT_X  3u
+#define REMOTE_CH_LEFT_X 3u
 
 /**
- * @brief SWA 三挡开关通道索引
+ * @brief SWA 二挡开关通道索引
  */
-#define REMOTE_CH_SWA     4u
+#define REMOTE_CH_SWA 4u
 
 /**
  * @brief SWB 三挡开关通道索引
  */
-#define REMOTE_CH_SWB     5u
+#define REMOTE_CH_SWB 5u
 
 /**
  * @brief SWC 三挡开关通道索引
  */
-#define REMOTE_CH_SWC     6u
+#define REMOTE_CH_SWC 6u
 
 /**
- * @brief SWD 三挡开关通道索引
+ * @brief SWD 二挡开关通道索引
  */
-#define REMOTE_CH_SWD     7u
+#define REMOTE_CH_SWD 7u
 
 /**
  * @brief VRA 旋钮通道索引
  */
-#define REMOTE_CH_VRA     8u
+#define REMOTE_CH_VRA 8u
 
 /**
  * @brief VRB 旋钮通道索引
  */
-#define REMOTE_CH_VRB     9u
+#define REMOTE_CH_VRB 9u
 
 /**
  * @brief 遥控器中位原始值
  */
-#define REMOTE_CENTER                1500
+#define REMOTE_CENTER 1500
 
 /**
  * @brief 遥控通道归一化半量程
  */
-#define REMOTE_SPAN                  500.0f
+#define REMOTE_SPAN 500.0f
 
 /**
  * @brief 摇杆输入死区
  */
-#define REMOTE_DEADBAND              10u
+#define REMOTE_DEADBAND 10u
 
 /**
  * @brief 遥控在线判定超时时间，单位 ms
  */
-#define REMOTE_TIMEOUT_MS            100u
+#define REMOTE_TIMEOUT_MS 100u
 
 /**
  * @brief 遥控处理周期，单位 s
  */
-#define REMOTE_CONTROL_PERIOD_S      0.010f
+#define REMOTE_CONTROL_PERIOD_S 0.010f
 
 /**
  * @brief 高速档最大 x 向速度，单位 m/s
  */
-#define REMOTE_FAST_MAX_VX_MPS       2.0f
+#define REMOTE_FAST_MAX_VX_MPS 2.0f
 
 /**
  * @brief 高速档最大 y 向速度，单位 m/s
  */
-#define REMOTE_FAST_MAX_VY_MPS       2.0f
+#define REMOTE_FAST_MAX_VY_MPS 2.0f
 
 /**
  * @brief 高速档最大角速度，单位 rad/s
  */
-#define REMOTE_FAST_MAX_WZ_RAD_S     8.0f
+#define REMOTE_FAST_MAX_WZ_RAD_S 8.0f
 
 /**
  * @brief 中速档最大 x 向速度，单位 m/s
  */
-#define REMOTE_MID_MAX_VX_MPS        1.0f
+#define REMOTE_MID_MAX_VX_MPS 1.0f
 
 /**
  * @brief 中速档最大 y 向速度，单位 m/s
  */
-#define REMOTE_MID_MAX_VY_MPS        1.0f
+#define REMOTE_MID_MAX_VY_MPS 1.0f
 
 /**
  * @brief 中速档最大角速度，单位 rad/s
  */
-#define REMOTE_MID_MAX_WZ_RAD_S      4.0f
+#define REMOTE_MID_MAX_WZ_RAD_S 4.0f
 
 /**
  * @brief 低速档最大 x 向速度，单位 m/s
  */
-#define REMOTE_SLOW_MAX_VX_MPS       0.5f
+#define REMOTE_SLOW_MAX_VX_MPS 0.5f
 
 /**
  * @brief 低速档最大 y 向速度，单位 m/s
  */
-#define REMOTE_SLOW_MAX_VY_MPS       0.5f
+#define REMOTE_SLOW_MAX_VY_MPS 0.5f
 
 /**
  * @brief 低速档最大角速度，单位 rad/s
  */
-#define REMOTE_SLOW_MAX_WZ_RAD_S     2.0f
+#define REMOTE_SLOW_MAX_WZ_RAD_S 2.0f
 
 /**
  * @brief 旋钮低位阈值
  */
-#define REMOTE_VR_LOW_THRESHOLD      1200u
+#define REMOTE_VR_LOW_THRESHOLD 1200u
 
 /**
  * @brief 三挡开关低位原始值
  */
-#define REMOTE_SW_LOW                2000u
-#define REMOTE_SW_CENTER             1500u
+#define REMOTE_SW_LOW 2000u
+#define REMOTE_SW_CENTER 1500u
 
 /**
  * @brief 三挡开关高位原始值
  */
-#define REMOTE_SW_HIGH               1000u
-#define REMOTE_ARM_YAW_JOINT_INDEX   0u
+#define REMOTE_SW_HIGH 1000u
+#define REMOTE_ARM_YAW_JOINT_INDEX 0u
 
 /**
  * @brief 遥控三挡速度上限配置
@@ -193,7 +194,12 @@ static void chassis_control_task(FsIa10bData rc_data);
 
 static void arm_control_task(FsIa10bData rc_data);
 
-static bool remote_chassis_manual_allowed(void);
+static bool remote_swd_is_autonomous_mode(uint16_t swd);
+static bool remote_swd_is_manual_mode(uint16_t swd);
+static bool remote_competition_state_owns_motion(CompetitionState state);
+static void remote_request_manual_takeover(void);
+static bool remote_manual_control_allowed(void);
+static void remote_zero_command_snapshot(bool online);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -204,6 +210,7 @@ void remote_init(void) {
     ChassisYawHoldConfig yaw_hold_config = chassis_yaw_hold_default_config();
 
     memset(&s_command, 0, sizeof(s_command));
+    s_last_arm_swc = 0u;
 
     yaw_hold_config.kp = 48.0f;
     yaw_hold_config.kd = 2.0f;
@@ -220,22 +227,35 @@ void remote_process(void) {
     FsIa10bData rc_data;
     ibus_maintain();
 
-    if(!ibus_get_data(&rc_data) || !ibus_is_online(REMOTE_TIMEOUT_MS) || rc_data.channel[REMOTE_CH_SWD] == REMOTE_SW_HIGH) return;
+    if(!ibus_get_data(&rc_data) || !ibus_is_online(REMOTE_TIMEOUT_MS)) {
+        remote_zero_command_snapshot(false);
+        return;
+    }
+
+    if(remote_swd_is_autonomous_mode(rc_data.channel[REMOTE_CH_SWD])) {
+        remote_zero_command_snapshot(true);
+        chassis_yaw_hold_reset();
+        return;
+    }
+
+    if(remote_swd_is_manual_mode(rc_data.channel[REMOTE_CH_SWD])) {
+        remote_request_manual_takeover();
+    }
+
+    if(remote_manual_control_allowed() == false) {
+        remote_zero_command_snapshot(true);
+        chassis_yaw_hold_reset();
+        (void)arm.stop();
+        (void)chassis.brake();
+        return;
+    }
 
     if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_HIGH) {
-        if(remote_chassis_manual_allowed()) {
-            chassis_control_task(rc_data);
-        }
-        else {
-            s_command.vx = 0.0f;
-            s_command.vy = 0.0f;
-            s_command.wz = 0.0f;
-            s_command.online = true;
-            chassis_yaw_hold_reset();
-            (void)chassis.set_velocity(0.0f, 0.0f, 0.0f);
-        }
+        chassis_control_task(rc_data);
     }
-    else if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_LOW) arm_control_task(rc_data);
+    else if(rc_data.channel[REMOTE_CH_SWA] == REMOTE_SW_LOW) {
+        arm_control_task(rc_data);
+    }
 }
 
 /**
@@ -339,10 +359,46 @@ static RemoteArmSpeedLimit get_arm_speed_limit(uint16_t swb) {
     return limit;
 }
 
-static bool remote_chassis_manual_allowed(void) {
-    const MissionRuntime* runtime = mission.get_state();
+static bool remote_swd_is_autonomous_mode(uint16_t swd) {
+    return swd == REMOTE_SW_HIGH;
+}
 
-    return runtime != NULL && runtime->current_phase == MISSION_PHASE_IDLE;
+static bool remote_swd_is_manual_mode(uint16_t swd) {
+    return remote_swd_is_autonomous_mode(swd) == false;
+}
+
+static bool remote_competition_state_owns_motion(CompetitionState state) {
+    return state == COMPETITION_STATE_START_BROADCAST || state == COMPETITION_STATE_GO_A || state == COMPETITION_STATE_A_SCAN || state == COMPETITION_STATE_A_POLLEN || state == COMPETITION_STATE_GO_B || state == COMPETITION_STATE_B_SCAN || state == COMPETITION_STATE_B_POLLEN || state == COMPETITION_STATE_GO_C || state == COMPETITION_STATE_C_SCAN || state == COMPETITION_STATE_C_POLLEN || state == COMPETITION_STATE_GO_D_HANDOFF || state == COMPETITION_STATE_GO_HOME;
+}
+
+static void remote_request_manual_takeover(void) {
+    const Competition* competition_state = competition.get_state();
+
+    if(competition_state == NULL || competition_state->initialized == false) {
+        return;
+    }
+
+    if(remote_competition_state_owns_motion(competition_state->current_state)) {
+        (void)competition.handle_command(MISSION_COMMAND_STOP);
+        (void)competition.process_all();
+    }
+}
+
+static bool remote_manual_control_allowed(void) {
+    const Competition* competition_state = competition.get_state();
+
+    if(competition_state == NULL || competition_state->initialized == false) {
+        return true;
+    }
+
+    return competition_state->current_state != COMPETITION_STATE_ESTOP;
+}
+
+static void remote_zero_command_snapshot(bool online) {
+    s_command.vx = 0.0f;
+    s_command.vy = 0.0f;
+    s_command.wz = 0.0f;
+    s_command.online = online;
 }
 
 static void chassis_control_task(FsIa10bData rc_data) {
@@ -353,8 +409,7 @@ static void chassis_control_task(FsIa10bData rc_data) {
         (void)chassis.set_steer_then_drive_enabled(true);
     }
 
-    if(rc_data.channel[REMOTE_CH_SWC] == REMOTE_SW_HIGH
-        || rc_data.channel[REMOTE_CH_VRA] <= REMOTE_VR_LOW_THRESHOLD) {
+    if(rc_data.channel[REMOTE_CH_SWC] == REMOTE_SW_HIGH || rc_data.channel[REMOTE_CH_VRA] <= REMOTE_VR_LOW_THRESHOLD) {
         s_command.vx = 0.0f;
         s_command.vy = 0.0f;
         s_command.wz = 0.0f;
@@ -438,8 +493,7 @@ static void arm_control_task(FsIa10bData rc_data) {
     }
 
     if(yaw_input != 0.0f) {
-        const float target_yaw = current_joints->q[REMOTE_ARM_YAW_JOINT_INDEX]
-            - yaw_input * speed_limit.yaw_rate_rad_s * REMOTE_CONTROL_PERIOD_S;
+        const float target_yaw = current_joints->q[REMOTE_ARM_YAW_JOINT_INDEX] - yaw_input * speed_limit.yaw_rate_rad_s * REMOTE_CONTROL_PERIOD_S;
         (void)arm.move_joint(REMOTE_ARM_YAW_JOINT_INDEX, target_yaw, speed_limit.servo_speed_rad_s);
     }
 

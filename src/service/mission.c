@@ -32,6 +32,7 @@ static bool mission_recognition_is_valid(const MissionRecognitionResult* result)
 static bool mission_recognition_is_fresh(const MissionRecognitionResult* result, uint32_t now_ms, uint32_t timestamp_ms);
 static void mission_fill_recognition_policy(MissionRecognitionPolicy* policy, MissionRecognitionAction action, MissionRecognitionAnomaly anomaly, MissionFaultCause fault_cause);
 static void mission_reset_poll_sequence(MissionRuntime* runtime);
+static void mission_release_motion_ownership(MissionRuntime* runtime);
 static bool mission_poll_sequence_execution_active(const MissionRuntime* runtime);
 static void mission_fill_poll_update(MissionPollSequenceUpdate* update, const MissionRuntime* runtime, MissionPollDecision decision, bool should_trigger_female_action, bool navigation_released);
 static MissionStatus mission_request_poll_chassis_hold(MissionRuntime* runtime);
@@ -493,6 +494,7 @@ MissionStatus mission_record_fault(MissionFaultCause cause) {
         s_mission_runtime.current_phase = MISSION_PHASE_FAULT;
         s_mission_runtime.run_result = MISSION_RUN_RESULT_FAULT;
     }
+    mission_release_motion_ownership(&s_mission_runtime);
 
     return MISSION_OK;
 }
@@ -504,6 +506,7 @@ MissionStatus mission_stop(void) {
 
     s_mission_runtime.current_phase = MISSION_PHASE_STOPPED;
     s_mission_runtime.run_result = MISSION_RUN_RESULT_STOPPED;
+    mission_release_motion_ownership(&s_mission_runtime);
     return MISSION_OK;
 }
 
@@ -515,6 +518,7 @@ MissionStatus mission_estop(void) {
     s_mission_runtime.last_fault_cause = MISSION_FAULT_ESTOP_REQUESTED;
     s_mission_runtime.current_phase = MISSION_PHASE_ESTOP;
     s_mission_runtime.run_result = MISSION_RUN_RESULT_ESTOP;
+    mission_release_motion_ownership(&s_mission_runtime);
     return MISSION_OK;
 }
 
@@ -789,6 +793,16 @@ static void mission_reset_poll_sequence(MissionRuntime* runtime) {
     memset(&runtime->poll_sequence, 0, sizeof(runtime->poll_sequence));
     runtime->poll_sequence.state = MISSION_POLL_SEQUENCE_IDLE;
     runtime->poll_sequence.decided_sex = FLOWER_SEX_UNKNOWN;
+}
+
+static void mission_release_motion_ownership(MissionRuntime* runtime) {
+    if(runtime == NULL) {
+        return;
+    }
+
+    mission_reset_poll_sequence(runtime);
+    runtime->motion_owner = MISSION_MOTION_OWNER_NONE;
+    runtime->chassis_hold_state = MISSION_CHASSIS_HOLD_NONE;
 }
 
 static bool mission_poll_sequence_execution_active(const MissionRuntime* runtime) {
