@@ -2,7 +2,7 @@
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
-#define NAV_MAP_POINT_MAX 14u
+#define NAV_MAP_POINT_MAX 15u
 #define BACK_HOME_POINT_COUNT 2u
 
 static NavPoint nav_map[NAV_MAP_POINT_MAX] = { 0 };
@@ -23,6 +23,61 @@ void nav_map_init(void) {
     nav_map[0].y = 0.0f;
     nav_map[0].area_type = START_END;
 
+    nav_map[1].x = 0.0f;
+    nav_map[1].y = -0.04f;
+    nav_map[1].area_type = PASS_BY;
+
+    nav_map[2].x = 0.64;
+    nav_map[2].y = -0.04;
+    nav_map[2].area_type = AREA_A;
+
+    nav_map[3].x = 1.18;
+    nav_map[3].y = -0.04;
+    nav_map[3].area_type = AREA_A;
+
+    nav_map[4].x = 1.72;
+    nav_map[4].y = -0.04;
+    nav_map[4].area_type = AREA_A;
+
+    nav_map[5].x = 2.07;
+    nav_map[5].y = -0.04;
+    nav_map[5].area_type = PASS_BY;
+
+    nav_map[6].x = 2.07;
+    nav_map[6].y = -0.79;
+    nav_map[6].area_type = PASS_BY;
+
+    nav_map[7].x = 1.77;
+    nav_map[7].y = -0.79;
+    nav_map[7].area_type = AREA_B;
+
+    nav_map[8].x = 1.24;
+    nav_map[8].y = -0.79;
+    nav_map[8].area_type = AREA_B;
+
+    nav_map[9].x = 0.72;
+    nav_map[9].y = -0.79;
+    nav_map[9].area_type = AREA_B;
+
+    nav_map[10].x = 0.39;
+    nav_map[10].y = -0.79;
+    nav_map[10].area_type = PASS_BY;
+
+    nav_map[11].x = 0.39;
+    nav_map[11].y = -1.55;
+    nav_map[11].area_type = PASS_BY;
+
+    nav_map[12].x = 0.89;
+    nav_map[12].y = -1.55;
+    nav_map[12].area_type = AREA_C;
+
+    nav_map[13].x = 1.31;
+    nav_map[13].y = -1.55;
+    nav_map[13].area_type = AREA_C;
+
+    nav_map[14].x = 1.71;
+    nav_map[14].y = -1.55;
+    nav_map[14].area_type = AREA_C;
 
     finish_current_point = false;
     current_point = 1u;

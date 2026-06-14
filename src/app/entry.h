@@ -47,9 +47,20 @@ static bool remote_takeover_latched = false;
 #define ENTRY_REMOTE_CH_SWD 7u
 
 /**
+ * @brief VRA 旋钮通道索引
+ */
+#define REMOTE_CH_VRA 8u
+
+/**
+ * @brief VRB 旋钮通道索引
+ */
+#define REMOTE_CH_VRB 9u
+
+/**
  * @brief SWD 低位原始值
  */
 #define ENTRY_REMOTE_SW_LOW 2000u
+#define ENTRY_REMOTE_SW_HIGH 1000u
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -131,16 +142,28 @@ static inline void entry_loop(void) {
             remote_tick = 0;
         }
 
+        static bool start = false;
+
         if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == ENTRY_REMOTE_SW_LOW) {
             if(remote_takeover_latched == false) {
+                start = false;
                 remote_takeover_latched = true;
+                log_info("Remote takeover by SWD low");
                 (void)chassis.brake();
                 (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_REMOTE);
             }
         }
         else if(remote_takeover_latched == true) {
+            start = false;
             remote_takeover_latched = false;
+            log_info("Remote release, switch to auto");
             (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_AUTO);
+        }
+
+        if(start == false && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == ENTRY_REMOTE_SW_HIGH && ibus_get_channel(REMOTE_CH_VRA) == ENTRY_REMOTE_SW_LOW && ibus_get_channel(REMOTE_CH_VRB) == ENTRY_REMOTE_SW_LOW) {
+            start = true;
+            log_info("Auto start triggered by remote");
+            task_post(&g_app_task, TASK_EVENT_START);
         }
 
         task_process(&g_app_task);
@@ -174,7 +197,7 @@ static inline void entry_loop(void) {
         }
     }
 
-    if(delay_nb_ms(&log_task, 1000)) {
+    if(delay_nb_ms(&log_task, 100)) {
         Vector3 od = { 0 };
         Vector3 ag = { 0 };
 
