@@ -1,3 +1,7 @@
+/**
+ * @file serial_arm_kine.c
+ * @brief 通用串联机械臂 MDH/FK/IK 实现
+ */
 #include "serial_arm_kine.h"
 
 #include <math.h>
@@ -306,17 +310,25 @@ SerialArmStatus s_serial_arm_ik(const SerialArmPose* target, SerialArmJointArray
         float err6[6] = { 0.0f };
         s_compute_full_error(target, &T, err6);
 
-        float pos_norm = sqrtf(err6[0] * err6[0] + err6[1] * err6[1] + err6[2] * err6[2]);
-        float ori_norm = sqrtf(err6[3] * err6[3] + err6[4] * err6[4] + err6[5] * err6[5]);
-
         bool need_pos = false;
         bool need_ori = false;
+        float pos_sq = 0.0f;
+        float ori_sq = 0.0f;
         for(uint8_t r = 0u; r < s_task.task_dim; r++) {
-            if(s_task.row[r] < 3u)
+            uint8_t src = s_task.row[r];
+            float e = err6[src];
+            if(src < 3u) {
                 need_pos = true;
-            else
+                pos_sq += e * e;
+            }
+            else {
                 need_ori = true;
+                ori_sq += e * e;
+            }
         }
+
+        float pos_norm = sqrtf(pos_sq);
+        float ori_norm = sqrtf(ori_sq);
 
         if((!need_pos || pos_norm < pos_tol) && (!need_ori || ori_norm < ori_tol)) {
             joints->dof = s_model.dof;

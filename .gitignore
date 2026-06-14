@@ -3,16 +3,12 @@ Core/Startup/
 Core/Src/*
 !Core/Src/main.c
 
-.omo/
 build/
 Drivers/
 external/
-competition/
 
 .cproject
 .mxproject
 .project
 STM32H723VGTX_FLASH.ld
 STM32H723VGTX_RAM.ld
-
-plan.md

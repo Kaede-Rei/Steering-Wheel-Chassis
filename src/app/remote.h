@@ -7,7 +7,6 @@
  */
 
 #include <stdbool.h>
-#include <stdint.h>
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
@@ -18,10 +17,10 @@
  * `online` 用于表示本次命令是否来自有效遥控链路
  */
 typedef struct {
-    float vx;      /**< 底盘 x 方向目标线速度，单位 m/s */
-    float vy;      /**< 底盘 y 方向目标线速度，单位 m/s */
-    float wz;      /**< 底盘 z 轴目标角速度，单位 rad/s */
-    bool online;   /**< 遥控链路是否在线 */
+    float vx;    /**< 底盘 x 方向目标线速度，单位 m/s */
+    float vy;    /**< 底盘 y 方向目标线速度，单位 m/s */
+    float wz;    /**< 底盘 z 轴目标角速度，单位 rad/s */
+    bool online; /**< 遥控链路是否在线 */
 } RemoteCommand;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
