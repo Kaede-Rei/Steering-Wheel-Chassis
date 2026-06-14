@@ -8,28 +8,28 @@
  * 日志模块使用 USART1 DMA 异步发送；
  * 发送完成后通过该指针通知日志队列继续输出
  */
-static void(*uart_tx_complete_callback)(void) = NULL;
+static void (*uart_tx_complete_callback)(void) = NULL;
 /**
  * @brief UART5 接收完成回调函数指针
  *
  * 普通中断接收完成时触发；
  * 当前 i.BUS 主要使用空闲行接收事件
  */
-static void(*uart_rx_complete_callback)(void) = NULL;
+static void (*uart_rx_complete_callback)(void) = NULL;
 /**
  * @brief UART5 接收事件回调函数指针
  *
  * ReceiveToIdle DMA 收到数据或空闲行时触发；
  * 参数表示本次接收的数据长度
  */
-static void(*uart_rx_event_callback)(uint16_t size) = NULL;
+static void (*uart_rx_event_callback)(uint16_t size) = NULL;
 /**
  * @brief UART5 错误回调函数指针
  *
  * UART 发生帧错误、噪声错误或溢出时触发；
  * i.BUS 驱动会借此重启接收
  */
-static void(*uart_error_callback)(void) = NULL;
+static void (*uart_error_callback)(void) = NULL;
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
@@ -65,6 +65,14 @@ bool uart7_write_blocking(const char* data, uint32_t len) {
     }
 
     return HAL_UART_Transmit(&huart7, (uint8_t*)data, (uint16_t)len, HAL_MAX_DELAY) == HAL_OK;
+}
+
+bool uart10_write_blocking(const char* data, uint32_t len) {
+    if(data == NULL || len == 0 || len > UINT16_MAX) {
+        return false;
+    }
+
+    return HAL_UART_Transmit(&huart10, (uint8_t*)data, (uint16_t)len, HAL_MAX_DELAY) == HAL_OK;
 }
 
 /**

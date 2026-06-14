@@ -7,6 +7,7 @@
 
 // ! app ! //
 #include "remote.h"
+#include "task.h"
 
 
 // ! service ! //
@@ -83,6 +84,11 @@ static inline void entry_init(void) {
     remote_init();
     delay_ms(100);
 
+    if(task.init() != task.OK)
+        return;
+    log_info("BOOT task init step done");
+    delay_ms(100);
+
     if(assemble_tim6_500hz() != SYSTEM_STATUS_OK)
         return;
     log_info("BOOT tim6 500hz init step done");
@@ -111,6 +117,8 @@ static inline void entry_loop(void) {
             remote_process();
             remote_tick = 0;
         }
+
+        // task.process();
 
         if(++arm_tick % 10 == 0) {
             arm.refresh_current_state();
