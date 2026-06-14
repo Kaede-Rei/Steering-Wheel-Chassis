@@ -23,6 +23,7 @@
 #include "hfsm/hfsm.h"
 #include "navigation_map.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
@@ -62,16 +63,22 @@ typedef enum {
  * @brief 任务状态机上下文
  * @param current_state_id 当前状态 ID
  * @param current_area 当前区域
+ * @param nav_start_point 当前导航段起点
  * @param current_nav_point 当前导航点
  * @param back_home_index 当前返航点索引
  * @param nav_start_ms 当前导航段起始时刻
+ * @param nav_brake_start_ms 当前导航点刹车保持起始时刻
+ * @param nav_braking 是否正在导航点刹车保持
  */
 typedef struct {
     TaskStateId current_state_id;
     AreaType current_area;
+    NavPoint nav_start_point;
     NavPoint current_nav_point;
     uint8_t back_home_index;
     uint32_t nav_start_ms;
+    uint32_t nav_brake_start_ms;
+    bool nav_braking;
 } TaskContext;
 
 /**
