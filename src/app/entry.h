@@ -36,6 +36,7 @@ static uint8_t remote_tick = 0;
 static uint8_t arm_tick = 0;
 static uint8_t odom_tick = 0;
 static uint8_t led_state = 0u;
+static Task app_task = { 0 };
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -84,8 +85,7 @@ static inline void entry_init(void) {
     remote_init();
     delay_ms(100);
 
-    if(task.init() != task.OK)
-        return;
+    task_init(&app_task);
     log_info("BOOT task init step done");
     delay_ms(100);
 
@@ -118,7 +118,7 @@ static inline void entry_loop(void) {
             remote_tick = 0;
         }
 
-        // task.process();
+        task_process(&app_task);
 
         if(++arm_tick % 10 == 0) {
             arm.refresh_current_state();
