@@ -10,9 +10,8 @@
  * ---- 2. 正常非遥控状态
  * -------- 2.1. 空闲状态
  * -------- 2.2. 导航状态
- * ------------ 2.2.1. 启动导航状态
- * ------------ 2.2.2. ABC 区导航状态
- * ------------ 2.2.3. 返回零点导航状态
+ * ------------ 2.2.1. 正常导航状态
+ * ------------ 2.2.2. 返回起点状态
  * -------- 2.3. 授粉状态
  * ------------ 2.3.1. A 区授粉状态
  * ------------ 2.3.2. B 区授粉状态
@@ -24,6 +23,8 @@
 #include "hfsm/hfsm.h"
 #include "navigation_map.h"
 
+#include <stdint.h>
+
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 /**
@@ -34,9 +35,8 @@ typedef enum {
     TASK_STATE_NORMAL,
     TASK_STATE_IDLE,
     TASK_STATE_NAVIGATION,
-    TASK_STATE_NAVIGATION_START,
-    TASK_STATE_NAVIGATION_ABC,
-    TASK_STATE_NAVIGATION_RETURN_ZERO,
+    TASK_STATE_NAVIGATION_NORMAL,
+    TASK_STATE_NAVIGATION_RETURN_HOME,
     TASK_STATE_POLLEN,
     TASK_STATE_POLLEN_A,
     TASK_STATE_POLLEN_B,
@@ -63,11 +63,15 @@ typedef enum {
  * @param current_state_id 当前状态 ID
  * @param current_area 当前区域
  * @param current_nav_point 当前导航点
+ * @param back_home_index 当前返航点索引
+ * @param nav_start_ms 当前导航段起始时刻
  */
 typedef struct {
     TaskStateId current_state_id;
     AreaType current_area;
     NavPoint current_nav_point;
+    uint8_t back_home_index;
+    uint32_t nav_start_ms;
 } TaskContext;
 
 /**
@@ -79,6 +83,8 @@ typedef struct {
     Hfsm fsm;
     TaskContext ctx;
 } Task;
+
+extern Task g_app_task;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 

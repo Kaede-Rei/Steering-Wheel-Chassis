@@ -2,21 +2,37 @@
  * @file task.c
  * @brief 比赛任务应用层层级状态机实现
  */
+
 #include "task.h"
 
 #include "asrpro.h"
+#include "chassis.h"
+#include "log.h"
+#include "delay.h"
+#include "odom.h"
+#include "arm.h"
 
+#include <math.h>
 #include <string.h>
 
 // ! ========================= 变 量 声 明 ========================= ! //
+
+#define IS_REACH_THRESHOLD 0.01f
+#define REACH_TIME_S 1.0f
+#define TASK_ARM_SPEED_RAD_S 12.56f
+
+static const FiveDofArmJointArray arm_a_joints = {
+    .q = { 1.54f, 2.36f, 5.66f, 2.33f, 3.14f }
+};
+
+Task g_app_task = { 0 };
 
 static HfsmState* s_error = NULL;
 static HfsmState* s_normal = NULL;
 static HfsmState* s_idle = NULL;
 static HfsmState* s_navigation = NULL;
-static HfsmState* s_navigation_start = NULL;
-static HfsmState* s_navigation_abc = NULL;
-static HfsmState* s_navigation_return_zero = NULL;
+static HfsmState* s_navigation_normal = NULL;
+static HfsmState* s_navigation_return_home = NULL;
 static HfsmState* s_pollen = NULL;
 static HfsmState* s_pollen_a = NULL;
 static HfsmState* s_pollen_b = NULL;
@@ -35,12 +51,10 @@ static HfsmResult remote_handle(HfsmMachine* m, const HfsmEvent* e);
 static void error_entry(HfsmMachine* m);
 static void idle_entry(HfsmMachine* m);
 static void navigation_entry(HfsmMachine* m);
-static void navigation_start_entry(HfsmMachine* m);
-static void navigation_start_action(HfsmMachine* m);
-static void navigation_abc_entry(HfsmMachine* m);
-static void navigation_abc_action(HfsmMachine* m);
-static void navigation_return_zero_entry(HfsmMachine* m);
-static void navigation_return_zero_action(HfsmMachine* m);
+static void navigation_normal_entry(HfsmMachine* m);
+static void navigation_normal_action(HfsmMachine* m);
+static void navigation_return_home_entry(HfsmMachine* m);
+static void navigation_return_home_action(HfsmMachine* m);
 static void pollen_entry(HfsmMachine* m);
 static void pollen_a_entry(HfsmMachine* m);
 static void pollen_a_action(HfsmMachine* m);
@@ -49,6 +63,9 @@ static void pollen_b_action(HfsmMachine* m);
 static void pollen_c_entry(HfsmMachine* m);
 static void pollen_c_action(HfsmMachine* m);
 static void remote_entry(HfsmMachine* m);
+
+static bool reach_at_nav_point(const NavPoint* nav_point, const Vector3* odom);
+static void go_to_nav_point(TaskContext* ctx);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -70,9 +87,8 @@ void task_init(Task* task) {
     s_remote = hfsm.add_state(&task->fsm, "Remote");
     s_idle = hfsm.add_substate(&task->fsm, s_normal, "Idle");
     s_navigation = hfsm.add_substate(&task->fsm, s_normal, "Navigation");
-    s_navigation_start = hfsm.add_substate(&task->fsm, s_navigation, "NavigationStart");
-    s_navigation_abc = hfsm.add_substate(&task->fsm, s_navigation, "NavigationABC");
-    s_navigation_return_zero = hfsm.add_substate(&task->fsm, s_navigation, "NavigationReturnZero");
+    s_navigation_normal = hfsm.add_substate(&task->fsm, s_navigation, "NavigationNormal");
+    s_navigation_return_home = hfsm.add_substate(&task->fsm, s_navigation, "NavigationReturnHome");
     s_pollen = hfsm.add_substate(&task->fsm, s_normal, "Pollen");
     s_pollen_a = hfsm.add_substate(&task->fsm, s_pollen, "PollenA");
     s_pollen_b = hfsm.add_substate(&task->fsm, s_pollen, "PollenB");
@@ -87,12 +103,10 @@ void task_init(Task* task) {
 
     hfsm.set_handle(s_navigation, navigation_handle);
     hfsm.set_entry(s_navigation, navigation_entry);
-    hfsm.set_entry(s_navigation_start, navigation_start_entry);
-    hfsm.set_action(s_navigation_start, navigation_start_action);
-    hfsm.set_entry(s_navigation_abc, navigation_abc_entry);
-    hfsm.set_action(s_navigation_abc, navigation_abc_action);
-    hfsm.set_entry(s_navigation_return_zero, navigation_return_zero_entry);
-    hfsm.set_action(s_navigation_return_zero, navigation_return_zero_action);
+    hfsm.set_entry(s_navigation_normal, navigation_normal_entry);
+    hfsm.set_action(s_navigation_normal, navigation_normal_action);
+    hfsm.set_entry(s_navigation_return_home, navigation_return_home_entry);
+    hfsm.set_action(s_navigation_return_home, navigation_return_home_action);
 
     hfsm.set_handle(s_pollen, pollen_handle);
     hfsm.set_entry(s_pollen, pollen_entry);
@@ -164,8 +178,8 @@ static HfsmResult idle_handle(HfsmMachine* m, const HfsmEvent* e) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
     if(e->id == TASK_EVENT_START) {
-        ctx->current_area = AREA_A;
-        return hfsm.res.transition(s_navigation_start);
+        ctx->back_home_index = 0u;
+        return hfsm.res.transition(s_navigation_normal);
     }
 
     return hfsm.res.ignore();
@@ -175,7 +189,14 @@ static HfsmResult navigation_handle(HfsmMachine* m, const HfsmEvent* e) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
     if(e->id == TASK_EVENT_NAV_REACHED) {
-        finish_current_nav_point();
+        (void)chassis.brake();
+
+        if(ctx->current_area == PASS_BY) {
+            finish_current_nav_point();
+            if(get_current_nav_point_index() >= (get_nav_point_max() - 1u))
+                return hfsm.res.transition(s_navigation_return_home);
+            return hfsm.res.transition(s_navigation_normal);
+        }
 
         if(ctx->current_area == AREA_A)
             return hfsm.res.transition(s_pollen_a);
@@ -194,18 +215,15 @@ static HfsmResult pollen_handle(HfsmMachine* m, const HfsmEvent* e) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
     if(e->id == TASK_EVENT_POLLEN_FINISHED) {
-        if(ctx->current_area == AREA_A) {
-            ctx->current_area = AREA_B;
-            return hfsm.res.transition(s_navigation_abc);
+        finish_current_nav_point();
+
+        if(get_current_nav_point_index() >= (get_nav_point_max() - 1u)) {
+            ctx->back_home_index = 0u;
+            ctx->current_area = START_END;
+            return hfsm.res.transition(s_navigation_return_home);
         }
 
-        if(ctx->current_area == AREA_B) {
-            ctx->current_area = AREA_C;
-            return hfsm.res.transition(s_navigation_abc);
-        }
-
-        ctx->current_area = START_END;
-        return hfsm.res.transition(s_navigation_return_zero);
+        return hfsm.res.transition(s_navigation_normal);
     }
 
     return hfsm.res.ignore();
@@ -232,6 +250,7 @@ static void idle_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_IDLE;
     ctx->current_area = START_END;
+    ctx->back_home_index = 0u;
 }
 
 static void navigation_entry(HfsmMachine* m) {
@@ -239,57 +258,68 @@ static void navigation_entry(HfsmMachine* m) {
     ctx->current_state_id = TASK_STATE_NAVIGATION;
 }
 
-static void navigation_start_entry(HfsmMachine* m) {
+static void navigation_normal_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
-    ctx->current_state_id = TASK_STATE_NAVIGATION_START;
+    ctx->current_state_id = TASK_STATE_NAVIGATION_NORMAL;
     ctx->current_nav_point = get_next_nav_point();
-    ctx->current_nav_point.area_type = AREA_A;
+    ctx->current_area = ctx->current_nav_point.area_type;
+    ctx->nav_start_ms = delay_now_ms();
 
-    (void)asrpro_broadcast(START);
+    if(ctx->current_area == AREA_A) {
+        if(arm.is_ready())
+            (void)arm.move_joints(&arm_a_joints, TASK_ARM_SPEED_RAD_S);
+    }
+
+    (void)asrpro_broadcast(TEAM_INTRO);
+    log_info("Navigate point %u -> (%.2f, %.2f)", get_current_nav_point_index(), ctx->current_nav_point.x, ctx->current_nav_point.y);
 }
 
-static void navigation_start_action(HfsmMachine* m) {
-    (void)m;
-
-    /* 启动导航状态:
-     * 这里预留“语音播报 + 从启动点前往下一个导航点”的移动控制位置
-     * 具体怎么移动由你后续补充
-     */
-}
-
-static void navigation_abc_entry(HfsmMachine* m) {
+static void navigation_normal_action(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
-
-    ctx->current_state_id = TASK_STATE_NAVIGATION_ABC;
-    ctx->current_nav_point = get_next_nav_point();
-    ctx->current_nav_point.area_type = ctx->current_area;
+    go_to_nav_point(ctx);
 }
 
-static void navigation_abc_action(HfsmMachine* m) {
-    (void)m;
-
-    /* ABC 区导航状态:
-     * 这里预留“正常导航”的移动控制位置
-     * 具体怎么移动由你后续补充
-     */
-}
-
-static void navigation_return_zero_entry(HfsmMachine* m) {
+static void navigation_return_home_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
+    NavPoint* back_home_points = get_back_home_points();
 
-    ctx->current_state_id = TASK_STATE_NAVIGATION_RETURN_ZERO;
-    ctx->current_nav_point = get_next_nav_point();
-    ctx->current_nav_point.area_type = START_END;
+    ctx->current_state_id = TASK_STATE_NAVIGATION_RETURN_HOME;
+    ctx->current_nav_point = back_home_points[ctx->back_home_index];
+    ctx->current_area = START_END;
+    ctx->nav_start_ms = delay_now_ms();
 }
 
-static void navigation_return_zero_action(HfsmMachine* m) {
-    (void)m;
+static void navigation_return_home_action(HfsmMachine* m) {
+    TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
+    Vector3 od = { 0 };
+    NavPoint* back_home_points = get_back_home_points();
+    float remain_s;
+    uint32_t elapsed_ms = delay_now_ms() - ctx->nav_start_ms;
 
-    /* 返回零点导航状态:
-     * 这里预留“从最后一个导航点返回到终点即启动点”的移动控制位置
-     * 具体怎么移动由你后续补充
-     */
+    odom.get_odom(&od);
+    if(reach_at_nav_point(&ctx->current_nav_point, &od) || elapsed_ms >= (uint32_t)(REACH_TIME_S * 1000.0f)) {
+        (void)chassis.brake();
+
+        if(ctx->back_home_index + 1u >= get_back_home_point_count()) {
+            (void)task_post(&g_app_task, TASK_EVENT_STOP);
+            return;
+        }
+
+        ctx->back_home_index++;
+        ctx->current_nav_point = back_home_points[ctx->back_home_index];
+        ctx->nav_start_ms = delay_now_ms();
+        return;
+    }
+
+    remain_s = REACH_TIME_S - (float)elapsed_ms / 1000.0f;
+    if(remain_s < 0.05f)
+        remain_s = 0.05f;
+
+    (void)chassis.set_velocity(
+        (ctx->current_nav_point.x - od.x) / remain_s,
+        (ctx->current_nav_point.y - od.y) / remain_s,
+        0.0f);
 }
 
 static void pollen_entry(HfsmMachine* m) {
@@ -343,4 +373,32 @@ static void pollen_c_action(HfsmMachine* m) {
 static void remote_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_REMOTE;
+}
+
+static bool reach_at_nav_point(const NavPoint* nav_point, const Vector3* odom) {
+    float err_x = nav_point->x - odom->x;
+    float err_y = nav_point->y - odom->y;
+
+    return fabsf(err_x) < IS_REACH_THRESHOLD && fabsf(err_y) < IS_REACH_THRESHOLD;
+}
+
+static void go_to_nav_point(TaskContext* ctx) {
+    Vector3 od = { 0 };
+    float remain_s;
+    uint32_t elapsed_ms = delay_now_ms() - ctx->nav_start_ms;
+
+    odom.get_odom(&od);
+    if(reach_at_nav_point(&ctx->current_nav_point, &od) || elapsed_ms >= (uint32_t)(REACH_TIME_S * 1000.0f)) {
+        (void)task_post(&g_app_task, TASK_EVENT_NAV_REACHED);
+        return;
+    }
+
+    remain_s = REACH_TIME_S - (float)elapsed_ms / 1000.0f;
+    if(remain_s < 0.05f)
+        remain_s = 0.05f;
+
+    (void)chassis.set_velocity(
+        (ctx->current_nav_point.x - od.x) / remain_s,
+        (ctx->current_nav_point.y - od.y) / remain_s,
+        0.0f);
 }

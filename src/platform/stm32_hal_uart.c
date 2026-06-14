@@ -8,14 +8,22 @@
  * 日志模块使用 USART1 DMA 异步发送；
  * 发送完成后通过该指针通知日志队列继续输出
  */
-static void (*uart_tx_complete_callback)(void) = NULL;
+static void (*uart1_tx_complete_callback)(void) = NULL;
+/**
+ * @brief UART1 接收完成回调函数指针
+ */
+static void (*uart1_rx_complete_callback)(void) = NULL;
+/**
+ * @brief UART1 错误回调函数指针
+ */
+static void (*uart1_error_callback)(void) = NULL;
 /**
  * @brief UART5 接收完成回调函数指针
  *
  * 普通中断接收完成时触发；
  * 当前 i.BUS 主要使用空闲行接收事件
  */
-static void (*uart_rx_complete_callback)(void) = NULL;
+static void (*uart5_rx_complete_callback)(void) = NULL;
 /**
  * @brief UART5 接收事件回调函数指针
  *
@@ -155,7 +163,7 @@ bool uart_abort_receive_dma(UART_HandleTypeDef* huart) {
  */
 void uart_register_tx_complete_callback(UART_HandleTypeDef* huart, void (*callback)(void)) {
     if(huart == &huart1) {
-        uart_tx_complete_callback = callback;
+        uart1_tx_complete_callback = callback;
     }
 }
 
@@ -165,8 +173,11 @@ void uart_register_tx_complete_callback(UART_HandleTypeDef* huart, void (*callba
  * @param callback 回调函数
  */
 void uart_register_rx_complete_callback(UART_HandleTypeDef* huart, void (*callback)(void)) {
+    if(huart == &huart1) {
+        uart1_rx_complete_callback = callback;
+    }
     if(huart == &huart5) {
-        uart_rx_complete_callback = callback;
+        uart5_rx_complete_callback = callback;
     }
 }
 
@@ -187,6 +198,9 @@ void uart_register_rx_event_callback(UART_HandleTypeDef* huart, void (*callback)
  * @param callback 回调函数
  */
 void uart_register_error_callback(UART_HandleTypeDef* huart, void (*callback)(void)) {
+    if(huart == &huart1) {
+        uart1_error_callback = callback;
+    }
     if(huart == &huart5) {
         uart_error_callback = callback;
     }
@@ -200,8 +214,8 @@ void uart_register_error_callback(UART_HandleTypeDef* huart, void (*callback)(vo
  */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
     if(huart == &huart1) {
-        if(uart_tx_complete_callback != NULL) {
-            uart_tx_complete_callback();
+        if(uart1_tx_complete_callback != NULL) {
+            uart1_tx_complete_callback();
         }
     }
 }
@@ -211,9 +225,14 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart) {
  * @param huart 触发回调的 UART 句柄
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef* huart) {
+    if(huart == &huart1) {
+        if(uart1_rx_complete_callback != NULL) {
+            uart1_rx_complete_callback();
+        }
+    }
     if(huart == &huart5) {
-        if(uart_rx_complete_callback != NULL) {
-            uart_rx_complete_callback();
+        if(uart5_rx_complete_callback != NULL) {
+            uart5_rx_complete_callback();
         }
     }
 }
@@ -237,8 +256,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size) {
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart) {
     if(huart == &huart1) {
-        if(uart_tx_complete_callback != NULL) {
-            uart_tx_complete_callback();
+        if(uart1_error_callback != NULL) {
+            uart1_error_callback();
         }
     }
 
