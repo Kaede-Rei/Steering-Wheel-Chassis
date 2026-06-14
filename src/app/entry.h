@@ -9,6 +9,9 @@
 #include "remote.h"
 #include "task.h"
 
+// ! device ! //
+#include "fs_ia10b.h"
+
 
 // ! service ! //
 #include "assemble/assemble.h"
@@ -36,6 +39,17 @@ static uint8_t remote_tick = 0;
 static uint8_t arm_tick = 0;
 static uint8_t odom_tick = 0;
 static uint8_t led_state = 0u;
+static bool remote_takeover_latched = false;
+
+/**
+ * @brief SWD 三挡开关通道索引
+ */
+#define ENTRY_REMOTE_CH_SWD 7u
+
+/**
+ * @brief SWD 低位原始值
+ */
+#define ENTRY_REMOTE_SW_LOW 2000u
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -115,6 +129,18 @@ static inline void entry_loop(void) {
         if(++remote_tick % 5 == 0) {
             remote_process();
             remote_tick = 0;
+        }
+
+        if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == ENTRY_REMOTE_SW_LOW) {
+            if(remote_takeover_latched == false) {
+                remote_takeover_latched = true;
+                (void)chassis.brake();
+                (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_REMOTE);
+            }
+        }
+        else if(remote_takeover_latched == true) {
+            remote_takeover_latched = false;
+            (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_AUTO);
         }
 
         task_process(&g_app_task);

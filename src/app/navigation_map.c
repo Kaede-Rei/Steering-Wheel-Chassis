@@ -2,7 +2,7 @@
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
-#define NAV_MAP_POINT_MAX 17u
+#define NAV_MAP_POINT_MAX 14u
 #define BACK_HOME_POINT_COUNT 2u
 
 static NavPoint nav_map[NAV_MAP_POINT_MAX] = { 0 };
@@ -22,6 +22,7 @@ void nav_map_init(void) {
     nav_map[0].x = 0.0f;
     nav_map[0].y = 0.0f;
     nav_map[0].area_type = START_END;
+
 
     finish_current_point = false;
     current_point = 1u;
