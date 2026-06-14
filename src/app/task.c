@@ -7,6 +7,7 @@
 
 #include "asrpro.h"
 #include "chassis.h"
+#include "chassis_yaw_hold.h"
 #include "log.h"
 #include "delay.h"
 #include "odom.h"
@@ -19,6 +20,7 @@
 
 #define IS_REACH_THRESHOLD 0.001f
 #define REACH_TIME_S 1.0f
+#define TASK_CONTROL_PERIOD_S 0.002f
 #define TASK_NAV_ACCEL_RATIO 0.05f
 #define TASK_NAV_TRACK_KP 4.0f
 #define TASK_NAV_TRACK_SPEED_MARGIN_M_S 0.04f
@@ -92,6 +94,7 @@ void task_init(Task* task) {
 
     memset(task, 0, sizeof(*task));
     nav_map_init();
+    chassis_yaw_hold_set_target(0.0f);
 
     hfsm.init(&task->fsm, &task->ctx);
 
@@ -426,6 +429,8 @@ static bool reach_at_nav_point(const NavPoint* nav_point, const Vector3* odom) {
 }
 
 static void follow_s_curve_nav(TaskContext* ctx, const Vector3* od) {
+    Vector3 angle = { 0 };
+    Vector3 gyro_corrected = { 0 };
     float elapsed_s = (float)(delay_now_ms() - ctx->nav_start_ms) / 1000.0f;
     float progress = elapsed_s / REACH_TIME_S;
     float profile_pos;
@@ -458,7 +463,12 @@ static void follow_s_curve_nav(TaskContext* ctx, const Vector3* od) {
     speed_limit = cruise_speed + TASK_NAV_TRACK_SPEED_MARGIN_M_S;
     navigation_clamp_velocity(&vx, &vy, speed_limit);
 
-    (void)chassis.set_velocity(vx, vy, 0.0f);
+    (void)odom.get_angle(&angle);
+    (void)odom.get_gyro_corrected(&gyro_corrected);
+    (void)chassis.set_velocity(
+        vx,
+        vy,
+        chassis_yaw_hold_apply(vx, vy, 0.0f, angle.z, gyro_corrected.z, TASK_CONTROL_PERIOD_S));
 }
 
 static void go_to_nav_point(TaskContext* ctx) {

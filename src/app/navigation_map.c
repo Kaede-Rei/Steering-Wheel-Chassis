@@ -116,7 +116,7 @@ NavPoint* get_back_home_points(void) {
     back_home_points[0] = nav_map[NAV_MAP_POINT_MAX - 4u];
     back_home_points[1] = nav_map[0];
     back_home_points[1].x -= 0.02f;
-    back_home_points[1].y -= 0.02f;
+    back_home_points[1].y -= 0.01f;
 
     return back_home_points;
 }

@@ -16,6 +16,7 @@
 // ! service ! //
 #include "assemble/assemble.h"
 #include "chassis.h"
+#include "chassis_yaw_hold.h"
 #include "odom.h"
 #include "arm.h"
 
@@ -150,6 +151,7 @@ static inline void entry_loop(void) {
                 remote_takeover_latched = true;
                 log_info("Remote takeover by SWD low");
                 (void)chassis.brake();
+                (void)chassis_yaw_hold_disable();
                 (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_REMOTE);
             }
         }
