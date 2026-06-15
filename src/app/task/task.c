@@ -209,10 +209,27 @@ static HfsmResult pollen_handle(HfsmMachine* m, const HfsmEvent* e) {
 }
 
 static HfsmResult remote_handle(HfsmMachine* m, const HfsmEvent* e) {
-    (void)m;
+    TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
-    if(e->id == TASK_EVENT_SWITCH_TO_AUTO)
-        return hfsm.res.transition(s_idle);
+    if(e->id == TASK_EVENT_SWITCH_TO_AUTO) {
+        ctx->resume_from_remote = true;
+
+        switch(ctx->state_before_remote) {
+            case TASK_STATE_NAVIGATION:
+            case TASK_STATE_NAVIGATION_NORMAL:
+                return hfsm.res.transition(s_navigation_normal);
+
+            case TASK_STATE_NAVIGATION_RETURN_HOME:
+                return hfsm.res.transition(s_navigation_return_home);
+
+            case TASK_STATE_POLLEN:
+                return hfsm.res.transition(s_pollen);
+
+            case TASK_STATE_IDLE:
+            default:
+                return hfsm.res.transition(s_idle);
+        }
+    }
 
     if(e->id == TASK_EVENT_ERROR)
         return hfsm.res.transition(s_error);
@@ -228,6 +245,7 @@ static void error_entry(HfsmMachine* m) {
 static void idle_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_IDLE;
+    ctx->resume_from_remote = false;
     task_nav_reset(&ctx->navigation);
     ctx->return_home.back_home_index = 0u;
     task_pollen_reset(&ctx->pollen);
@@ -246,6 +264,7 @@ static void navigation_normal_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
     ctx->current_state_id = TASK_STATE_NAVIGATION_NORMAL;
+    ctx->resume_from_remote = false;
 }
 
 static void navigation_normal_action(HfsmMachine* m) {
@@ -262,6 +281,11 @@ static void navigation_return_home_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_NAVIGATION_RETURN_HOME;
     ctx->navigation.current_area = START_END;
+
+    if(ctx->resume_from_remote) {
+        ctx->resume_from_remote = false;
+        return;
+    }
 
     if(task_nav_return_home_start(&ctx->navigation, &ctx->return_home) == false)
         (void)task_post(&g_app_task, TASK_EVENT_ERROR);
@@ -285,6 +309,11 @@ static void pollen_entry(HfsmMachine* m) {
     ctx->current_state_id = TASK_STATE_POLLEN;
 
     (void)chassis.set_velocity(0.0f, 0.0f, 0.0f);
+    if(ctx->resume_from_remote) {
+        ctx->resume_from_remote = false;
+        return;
+    }
+
     task_pollen_start(&ctx->pollen, ctx->navigation.target_index, ctx->navigation.current_area, &ctx->navigation.target_point);
 }
 
@@ -300,6 +329,8 @@ static void pollen_action(HfsmMachine* m) {
 
 static void remote_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
+    if(ctx->current_state_id != TASK_STATE_REMOTE)
+        ctx->state_before_remote = ctx->current_state_id;
     ctx->current_state_id = TASK_STATE_REMOTE;
 
     (void)chassis.set_steer_then_drive_enabled(false);

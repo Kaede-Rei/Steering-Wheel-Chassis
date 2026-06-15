@@ -129,6 +129,8 @@ typedef struct {
  */
 typedef struct {
     TaskStateId current_state_id;
+    TaskStateId state_before_remote;
+    bool resume_from_remote;
     TaskNavigationContext navigation;
     TaskReturnHomeContext return_home;
     TaskPollenContext pollen;
