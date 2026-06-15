@@ -26,6 +26,7 @@ static bool pollen_load_sequence(TaskPollenSequenceContext* sequence, uint8_t na
 static bool pollen_step_reached(const FiveDofArmJointArray* target);
 static void pollen_log_step_timeout(uint8_t step, const FiveDofArmJointArray* target);
 static AsrProCmd pollen_make_x_broadcast_cmd(XFlowerType flowers);
+static AsrProCmd pollen_make_x_side_broadcast_cmd(XFlowerType flowers);
 static AsrProCmd pollen_make_y_broadcast_cmd(YFlowerType flowers);
 static bool pollen_make_broadcast_cmd(AreaType area, const NavPoint* point, AsrProCmd* out_cmd);
 
@@ -297,6 +298,15 @@ static AsrProCmd pollen_make_x_broadcast_cmd(XFlowerType flowers) {
 }
 
 /**
+ * @brief 将 C 区左右两侧花型信息编码为语音播报指令
+ * @param flowers 横向花型信息
+ * @return AsrProCmd 语音播报指令
+ */
+static AsrProCmd pollen_make_x_side_broadcast_cmd(XFlowerType flowers) {
+    return (AsrProCmd)(X_00 + ((flowers.left ? 1 : 0) << 1) + (flowers.right ? 1 : 0));
+}
+
+/**
  * @brief 将纵向花型信息编码为语音播报指令
  * @param flowers 纵向花型信息
  * @return AsrProCmd 语音播报指令
@@ -320,8 +330,11 @@ static bool pollen_make_broadcast_cmd(AreaType area, const NavPoint* point, AsrP
             return true;
 
         case AREA_B:
-        case AREA_C:
             *out_cmd = pollen_make_x_broadcast_cmd(point->x_flowers);
+            return true;
+
+        case AREA_C:
+            *out_cmd = pollen_make_x_side_broadcast_cmd(point->x_flowers);
             return true;
 
         default:
