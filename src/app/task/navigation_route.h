@@ -1,5 +1,5 @@
-#ifndef _navigation_map_h_
-#define _navigation_map_h_
+#ifndef _navigation_route_h_
+#define _navigation_route_h_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -48,6 +48,11 @@ typedef struct {
     bool down;
 } YFlowerType;
 
+/**
+ * @brief 预识别机械臂关节角
+ * @param exist 是否存在预识别动作
+ * @param joints 预识别动作关节角
+ */
 typedef struct {
     bool exist;
     FiveDofArmJointArray joints;
@@ -58,6 +63,9 @@ typedef struct {
  * @param x 导航点 x 坐标
  * @param y 导航点 y 坐标
  * @param area_type 导航点所在区域类型
+ * @param x_flowers 横向花型
+ * @param y_flowers 纵向花型
+ * @param pre_detect_joints 预识别机械臂关节角
  */
 typedef struct {
     float x;
@@ -70,12 +78,9 @@ typedef struct {
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
 
-void nav_map_init(void);
-void finish_current_nav_point(void);
-NavPoint get_next_nav_point(void);
-NavPoint* get_back_home_points(void);
-uint8_t get_current_nav_point_index(void);
-uint8_t get_nav_point_max(void);
-uint8_t get_back_home_point_count(void);
+bool nav_route_get(uint8_t index, NavPoint* out);
+uint8_t nav_route_count(void);
+bool nav_return_route_get(uint8_t index, NavPoint* out);
+uint8_t nav_return_route_count(void);
 
 #endif

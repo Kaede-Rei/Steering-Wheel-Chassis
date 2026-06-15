@@ -111,6 +111,13 @@ static ArmStatus s_ik_with_task(const FiveDofArmPose* target, FiveDofArmJointArr
  */
 static ArmStatus s_send_joints_to_servo(const FiveDofArmJointArray* joints, float speed_rad_s);
 /**
+ * @brief 用最新目标关节和位姿结果刷新目标缓存
+ * @param joints 最新目标关节数组
+ * @param pose 最新目标末端位姿
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_update_target_state(const FiveDofArmJointArray* joints, const FiveDofArmPose* pose);
+/**
  * @brief 用最新关节和位姿结果刷新服务缓存
  * @param joints 最新关节数组
  * @param pose 最新末端位姿
@@ -121,6 +128,18 @@ static ArmStatus s_update_current_state(const FiveDofArmJointArray* joints, cons
  * @brief 同步内部运行实例到对外只读快照
  */
 static void s_sync_view(void);
+/**
+ * @brief 获取当前用于连续规划的参考关节角
+ * @param joints 输出参考关节角
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_get_reference_joints(FiveDofArmJointArray* joints);
+/**
+ * @brief 获取当前用于连续规划的参考末端位姿
+ * @param pose 输出参考末端位姿
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_get_reference_pose(FiveDofArmPose* pose);
 /**
  * @brief 解析最终使用的运动速度
  * @param speed_rad_s 外部请求速度，单位 rad/s
@@ -182,6 +201,9 @@ ArmStatus arm_init(const ArmConfig* config) {
     if(five_dof_arm.fk(&mdh_zero, &s_arm.current_pose) != SERIAL_ARM_STATUS_SUCCESS) {
         return ARM_KINEMATICS_FAILED;
     }
+    s_arm.target_joints = mdh_zero;
+    s_arm.target_pose = s_arm.current_pose;
+    s_arm.target_valid = true;
     s_arm.current_joints = mdh_zero;
     s_arm.current_valid = false;
     s_arm.initialized = true;
@@ -226,7 +248,7 @@ ArmStatus arm_move_joints(const FiveDofArmJointArray* joints, float speed_rad_s)
     if(ret != ARM_OK)
         return ret;
 
-    return s_update_current_state(joints, &pose);
+    return s_update_target_state(joints, &pose);
 }
 
 /**
@@ -246,12 +268,8 @@ ArmStatus arm_move_joint(uint8_t joint_index, float target_rad, float speed_rad_
     if(s_joint_in_limit(joint_index, target_rad) == false)
         return ARM_OUT_OF_LIMIT;
 
-    if(s_arm.current_valid) {
-        joints = s_arm.current_joints;
-    }
-    else if(five_dof_arm.get_mdh_zero(&joints) != SERIAL_ARM_STATUS_SUCCESS) {
+    if(s_get_reference_joints(&joints) != ARM_OK)
         return ARM_KINEMATICS_FAILED;
-    }
 
     joints.q[joint_index] = target_rad;
     return arm_move_joints(&joints, speed_rad_s);
@@ -303,12 +321,8 @@ ArmStatus arm_move_pose(const FiveDofArmPose* target, float speed_rad_s) {
     if(target == NULL)
         return ARM_INVALID_PARAM;
 
-    if(s_arm.current_valid) {
-        seed = s_arm.current_joints;
-    }
-    else if(five_dof_arm.get_mdh_zero(&seed) != SERIAL_ARM_STATUS_SUCCESS) {
+    if(s_get_reference_joints(&seed) != ARM_OK)
         return ARM_KINEMATICS_FAILED;
-    }
 
     ik_ret = s_ik_with_task(target, &joints, &seed, NULL);
     if(ik_ret != ARM_OK)
@@ -338,28 +352,15 @@ ArmStatus arm_move_position(float x, float y, float z, float speed_rad_s) {
     if(s_arm.initialized == false)
         return ARM_NOT_INITIALIZED;
 
-    if(s_arm.current_valid) {
-        target = s_arm.current_pose;
-    }
-    else {
-        if(five_dof_arm.get_mdh_zero(&seed) != SERIAL_ARM_STATUS_SUCCESS) {
-            return ARM_KINEMATICS_FAILED;
-        }
-        if(five_dof_arm.fk(&seed, &target) != SERIAL_ARM_STATUS_SUCCESS) {
-            return ARM_KINEMATICS_FAILED;
-        }
-    }
+    if(s_get_reference_pose(&target) != ARM_OK)
+        return ARM_KINEMATICS_FAILED;
 
     target.position.x = x;
     target.position.y = y;
     target.position.z = z;
 
-    if(s_arm.current_valid) {
-        seed = s_arm.current_joints;
-    }
-    else if(five_dof_arm.get_mdh_zero(&seed) != SERIAL_ARM_STATUS_SUCCESS) {
+    if(s_get_reference_joints(&seed) != ARM_OK)
         return ARM_KINEMATICS_FAILED;
-    }
 
     ik_ret = s_ik_with_task(&target, &joints, &seed, &task);
     if(ik_ret != ARM_OK)
@@ -390,17 +391,8 @@ ArmStatus arm_move_orientation(float roll, float pitch, float yaw, float speed_r
     if(s_arm.initialized == false)
         return ARM_NOT_INITIALIZED;
 
-    if(s_arm.current_valid) {
-        target.position = s_arm.current_pose.position;
-    }
-    else {
-        if(five_dof_arm.get_mdh_zero(&seed) != SERIAL_ARM_STATUS_SUCCESS) {
-            return ARM_KINEMATICS_FAILED;
-        }
-        if(five_dof_arm.fk(&seed, &target) != SERIAL_ARM_STATUS_SUCCESS) {
-            return ARM_KINEMATICS_FAILED;
-        }
-    }
+    if(s_get_reference_pose(&target) != ARM_OK)
+        return ARM_KINEMATICS_FAILED;
 
     ret = serial_arm.pose_from_xyz_rpy(
         target.position.x,
@@ -414,12 +406,8 @@ ArmStatus arm_move_orientation(float roll, float pitch, float yaw, float speed_r
         return ARM_KINEMATICS_FAILED;
     }
 
-    if(s_arm.current_valid) {
-        seed = s_arm.current_joints;
-    }
-    else if(five_dof_arm.get_mdh_zero(&seed) != SERIAL_ARM_STATUS_SUCCESS) {
+    if(s_get_reference_joints(&seed) != ARM_OK)
         return ARM_KINEMATICS_FAILED;
-    }
 
     ik_ret = s_ik_with_task(&target, &joints, &seed, &task);
     if(ik_ret != ARM_OK)
@@ -713,6 +701,23 @@ static ArmStatus s_send_joints_to_servo(const FiveDofArmJointArray* joints, floa
 }
 
 /**
+ * @brief 用最新目标关节和位姿结果刷新目标缓存
+ * @param joints 最新目标关节数组
+ * @param pose 最新目标末端位姿
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_update_target_state(const FiveDofArmJointArray* joints, const FiveDofArmPose* pose) {
+    if(joints == NULL || pose == NULL)
+        return ARM_INVALID_PARAM;
+
+    s_arm.target_joints = *joints;
+    s_arm.target_pose = *pose;
+    s_arm.target_valid = true;
+    s_sync_view();
+    return ARM_OK;
+}
+
+/**
  * @brief 用最新关节和位姿结果刷新服务缓存
  * @param joints 最新关节数组
  * @param pose 最新末端位姿
@@ -726,6 +731,57 @@ static ArmStatus s_update_current_state(const FiveDofArmJointArray* joints, cons
     s_arm.current_pose = *pose;
     s_arm.current_valid = true;
     s_sync_view();
+    return ARM_OK;
+}
+
+/**
+ * @brief 获取当前用于连续规划的参考关节角
+ * @param joints 输出参考关节角
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_get_reference_joints(FiveDofArmJointArray* joints) {
+    if(joints == NULL)
+        return ARM_INVALID_PARAM;
+
+    if(s_arm.current_valid) {
+        *joints = s_arm.current_joints;
+        return ARM_OK;
+    }
+
+    if(s_arm.target_valid) {
+        *joints = s_arm.target_joints;
+        return ARM_OK;
+    }
+
+    return (five_dof_arm.get_mdh_zero(joints) == SERIAL_ARM_STATUS_SUCCESS) ? ARM_OK : ARM_KINEMATICS_FAILED;
+}
+
+/**
+ * @brief 获取当前用于连续规划的参考末端位姿
+ * @param pose 输出参考末端位姿
+ * @return ArmStatus 服务状态码
+ */
+static ArmStatus s_get_reference_pose(FiveDofArmPose* pose) {
+    FiveDofArmJointArray joints;
+
+    if(pose == NULL)
+        return ARM_INVALID_PARAM;
+
+    if(s_arm.current_valid) {
+        *pose = s_arm.current_pose;
+        return ARM_OK;
+    }
+
+    if(s_arm.target_valid) {
+        *pose = s_arm.target_pose;
+        return ARM_OK;
+    }
+
+    if(five_dof_arm.get_mdh_zero(&joints) != SERIAL_ARM_STATUS_SUCCESS)
+        return ARM_KINEMATICS_FAILED;
+    if(five_dof_arm.fk(&joints, pose) != SERIAL_ARM_STATUS_SUCCESS)
+        return ARM_KINEMATICS_FAILED;
+
     return ARM_OK;
 }
 

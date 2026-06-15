@@ -98,6 +98,9 @@ typedef struct {
  */
 typedef struct {
     ArmConfig config;
+    FiveDofArmJointArray target_joints;
+    FiveDofArmPose target_pose;
+    bool target_valid;
     FiveDofArmJointArray current_joints;
     FiveDofArmPose current_pose;
     bool current_valid;
