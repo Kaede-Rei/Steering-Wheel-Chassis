@@ -32,33 +32,33 @@
  * @brief 任务状态机状态枚举
  */
 typedef enum {
-    TASK_STATE_ERROR = 0,
-    TASK_STATE_NORMAL,
-    TASK_STATE_IDLE,
-    TASK_STATE_NAVIGATION,
-    TASK_STATE_NAVIGATION_START,
-    TASK_STATE_NAVIGATION_NORMAL,
-    TASK_STATE_NAVIGATION_RETURN_HOME,
-    TASK_STATE_POLLEN,
-    TASK_STATE_POLLEN_A,
-    TASK_STATE_POLLEN_B,
-    TASK_STATE_POLLEN_C,
-    TASK_STATE_REMOTE
+    TASK_STATE_ERROR = 0,              /**< 错误状态 */
+    TASK_STATE_NORMAL,                 /**< 正常自动任务父状态 */
+    TASK_STATE_IDLE,                   /**< 空闲待命状态 */
+    TASK_STATE_NAVIGATION,             /**< 导航父状态 */
+    TASK_STATE_NAVIGATION_START,       /**< 起始播报状态 */
+    TASK_STATE_NAVIGATION_NORMAL,      /**< 正常导航状态 */
+    TASK_STATE_NAVIGATION_RETURN_HOME, /**< 返航状态 */
+    TASK_STATE_POLLEN,                 /**< 授粉父状态 */
+    TASK_STATE_POLLEN_A,               /**< A 区授粉状态 */
+    TASK_STATE_POLLEN_B,               /**< B 区授粉状态 */
+    TASK_STATE_POLLEN_C,               /**< C 区授粉状态 */
+    TASK_STATE_REMOTE                  /**< 遥控接管状态 */
 } TaskStateId;
 
 /**
  * @brief 任务状态机事件枚举
  */
 typedef enum {
-    TASK_EVENT_START = 1,
-    TASK_EVENT_STOP,
-    TASK_EVENT_SWITCH_TO_REMOTE,
-    TASK_EVENT_SWITCH_TO_AUTO,
-    TASK_EVENT_NAV_START_FINISHED,
-    TASK_EVENT_NAV_REACHED,
-    TASK_EVENT_POLLEN_FINISHED,
-    TASK_EVENT_ERROR,
-    TASK_EVENT_ERROR_CLEAR
+    TASK_EVENT_START = 1,          /**< 开始自动任务 */
+    TASK_EVENT_STOP,               /**< 结束任务并回到空闲 */
+    TASK_EVENT_SWITCH_TO_REMOTE,   /**< 切换到遥控模式 */
+    TASK_EVENT_SWITCH_TO_AUTO,     /**< 从遥控切回自动待命 */
+    TASK_EVENT_NAV_START_FINISHED, /**< 起始播报完成 */
+    TASK_EVENT_NAV_REACHED,        /**< 当前导航点到达完成 */
+    TASK_EVENT_POLLEN_FINISHED,    /**< 当前授粉动作完成 */
+    TASK_EVENT_ERROR,              /**< 进入错误状态 */
+    TASK_EVENT_ERROR_CLEAR         /**< 清除错误并回到空闲 */
 } TaskEventId;
 
 /**
@@ -67,6 +67,8 @@ typedef enum {
  * @param current_area 当前区域
  * @param nav_start_point 当前导航段起点
  * @param current_nav_point 当前导航点
+ * @param current_nav_point.area_type 当前点所属区域，决定是否切授粉状态
+ * @param current_nav_point.pre_detect_joints 当前点预识别机械臂关节角
  * @param back_home_index 当前返航点索引
  * @param nav_start_ms 当前导航段起始时刻
  * @param nav_brake_start_ms 当前导航点刹车保持起始时刻

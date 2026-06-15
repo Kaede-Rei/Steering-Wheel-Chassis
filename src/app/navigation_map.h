@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "arm.h" // IWYU pragma: keep
+
 // ! ========================= 接 口 变 量 / Typedef 声 明 ========================= ! //
 
 /**
@@ -46,6 +48,11 @@ typedef struct {
     bool down;
 } YFlowerType;
 
+typedef struct {
+    bool exist;
+    FiveDofArmJointArray joints;
+} PreDetectJoints;
+
 /**
  * @brief 导航点结构体
  * @param x 导航点 x 坐标
@@ -56,8 +63,9 @@ typedef struct {
     float x;
     float y;
     AreaType area_type;
-    XFlowerType x_flowers[2];
-    YFlowerType y_flowers[2];
+    XFlowerType x_flowers;
+    YFlowerType y_flowers;
+    PreDetectJoints pre_detect_joints;
 } NavPoint;
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //
