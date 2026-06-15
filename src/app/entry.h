@@ -151,6 +151,8 @@ static inline void entry_loop(void) {
     }
 
     if(delay_nb_ms(&log_task, 1000)) {
-        log_info("Heartbeat");
+        // log_info("Heartbeat");
+        const FiveDofArmJointArray* arm_joints = arm.get_current_joints();
+        log_info("J0-4: %f, %f, %f, %f, %f", arm_joints->q[0], arm_joints->q[1], arm_joints->q[2], arm_joints->q[3], arm_joints->q[4]);
     }
 }
