@@ -60,8 +60,17 @@ static bool remote_takeover_latched = false;
 /**
  * @brief SWD 低位原始值
  */
-#define ENTRY_REMOTE_SW_LOW 2000u
-#define ENTRY_REMOTE_SW_HIGH 1000u
+#define REMOTE_SW_LOW 2000u
+
+/**
+ * @brief SWD 高位原始值
+ */
+#define REMOTE_SW_HIGH 1000u
+
+/**
+ * @brief VR 旋钮高位原始值阈值
+ */
+#define REMOTE_VR_HIGH_THRESHOLD 1800u
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -145,11 +154,11 @@ static inline void entry_loop(void) {
 
         static bool start = false;
 
-        if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == ENTRY_REMOTE_SW_LOW) {
+        if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_LOW) {
             if(remote_takeover_latched == false) {
                 start = false;
                 remote_takeover_latched = true;
-                log_info("Remote takeover by SWD low");
+                log_info("Remote 接管，切换到遥控模式");
                 (void)chassis.brake();
                 (void)chassis_yaw_hold_disable();
                 (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_REMOTE);
@@ -158,13 +167,13 @@ static inline void entry_loop(void) {
         else if(remote_takeover_latched == true) {
             start = false;
             remote_takeover_latched = false;
-            log_info("Remote release, switch to auto");
+            log_info("Remote 释放，切换到自主任务模式");
             (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_AUTO);
         }
 
-        if(start == false && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == ENTRY_REMOTE_SW_HIGH && ibus_get_channel(REMOTE_CH_VRA) == ENTRY_REMOTE_SW_LOW && ibus_get_channel(REMOTE_CH_VRB) == ENTRY_REMOTE_SW_LOW) {
+        if(start == false && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_HIGH && ibus_get_channel(REMOTE_CH_VRA) >= REMOTE_VR_HIGH_THRESHOLD && ibus_get_channel(REMOTE_CH_VRB) >= REMOTE_VR_HIGH_THRESHOLD) {
             start = true;
-            log_info("Auto start triggered by remote");
+            log_info("自主任务模式启动");
             task_post(&g_app_task, TASK_EVENT_START);
         }
 
@@ -199,13 +208,8 @@ static inline void entry_loop(void) {
         }
     }
 
-    if(delay_nb_ms(&log_task, 100)) {
-        Vector3 od = { 0 };
-        Vector3 ag = { 0 };
-
-        odom.get_odom(&od);
-        odom.get_angle(&ag);
-        log_vofa(od.x, od.y, od.z, ag.x, ag.y, ag.z);
+    if(delay_nb_ms(&log_task, 1000)) {
+        log_info("Heartbeat");
     }
 }
 

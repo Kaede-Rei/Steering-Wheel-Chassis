@@ -11,7 +11,6 @@
 #include "log.h"
 #include "delay.h"
 #include "odom.h"
-#include "arm.h"
 
 #include <math.h>
 #include <string.h>
@@ -26,11 +25,6 @@
 #define TASK_NAV_TRACK_SPEED_MARGIN_M_S 0.04f
 #define TASK_NAV_BRAKE_HOLD_MS 300u
 #define TASK_NAV_BRAKE_TIMEOUT_MS 1500u
-#define TASK_ARM_SPEED_RAD_S 12.56f
-
-static const FiveDofArmJointArray arm_a_joints = {
-    .q = { 1.54f, 2.36f, 5.66f, 2.33f, 3.14f }
-};
 
 Task g_app_task = { 0 };
 
@@ -38,6 +32,7 @@ static HfsmState* s_error = NULL;
 static HfsmState* s_normal = NULL;
 static HfsmState* s_idle = NULL;
 static HfsmState* s_navigation = NULL;
+static HfsmState* s_navigation_start = NULL;
 static HfsmState* s_navigation_normal = NULL;
 static HfsmState* s_navigation_return_home = NULL;
 static HfsmState* s_pollen = NULL;
@@ -58,6 +53,7 @@ static HfsmResult remote_handle(HfsmMachine* m, const HfsmEvent* e);
 static void error_entry(HfsmMachine* m);
 static void idle_entry(HfsmMachine* m);
 static void navigation_entry(HfsmMachine* m);
+static void navigation_start_entry(HfsmMachine* m);
 static void navigation_normal_entry(HfsmMachine* m);
 static void navigation_normal_action(HfsmMachine* m);
 static void navigation_return_home_entry(HfsmMachine* m);
@@ -81,6 +77,11 @@ static bool navigation_service_brake_hold(TaskContext* ctx);
 static void navigation_finish_return_home_brake(TaskContext* ctx);
 static void navigation_s_curve_profile(float progress, float* position_ratio, float* speed_ratio);
 static void navigation_clamp_velocity(float* vx, float* vy, float max_speed);
+static HfsmState* navigation_get_pollen_state(AreaType area);
+static bool navigation_point_requires_pollen(const NavPoint* nav_point);
+static AsrProCmd navigation_make_x_broadcast_cmd(XFlowerType flowers);
+static AsrProCmd navigation_make_y_broadcast_cmd(YFlowerType flowers);
+static void navigation_broadcast_current_point(const TaskContext* ctx);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -103,6 +104,7 @@ void task_init(Task* task) {
     s_remote = hfsm.add_state(&task->fsm, "Remote");
     s_idle = hfsm.add_substate(&task->fsm, s_normal, "Idle");
     s_navigation = hfsm.add_substate(&task->fsm, s_normal, "Navigation");
+    s_navigation_start = hfsm.add_substate(&task->fsm, s_navigation, "NavigationStart");
     s_navigation_normal = hfsm.add_substate(&task->fsm, s_navigation, "NavigationNormal");
     s_navigation_return_home = hfsm.add_substate(&task->fsm, s_navigation, "NavigationReturnHome");
     s_pollen = hfsm.add_substate(&task->fsm, s_normal, "Pollen");
@@ -119,6 +121,7 @@ void task_init(Task* task) {
 
     hfsm.set_handle(s_navigation, navigation_handle);
     hfsm.set_entry(s_navigation, navigation_entry);
+    hfsm.set_entry(s_navigation_start, navigation_start_entry);
     hfsm.set_entry(s_navigation_normal, navigation_normal_entry);
     hfsm.set_action(s_navigation_normal, navigation_normal_action);
     hfsm.set_entry(s_navigation_return_home, navigation_return_home_entry);
@@ -194,8 +197,9 @@ static HfsmResult idle_handle(HfsmMachine* m, const HfsmEvent* e) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
     if(e->id == TASK_EVENT_START) {
+        nav_map_init();
         ctx->back_home_index = 0u;
-        return hfsm.res.transition(s_navigation_normal);
+        return hfsm.res.transition(s_navigation_start);
     }
 
     return hfsm.res.ignore();
@@ -204,6 +208,9 @@ static HfsmResult idle_handle(HfsmMachine* m, const HfsmEvent* e) {
 static HfsmResult navigation_handle(HfsmMachine* m, const HfsmEvent* e) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
 
+    if(e->id == TASK_EVENT_NAV_START_FINISHED)
+        return hfsm.res.transition(s_navigation_normal);
+
     if(e->id == TASK_EVENT_NAV_REACHED) {
         log_info("Reach point %u -> (%.2f, %.2f)",
                  get_current_nav_point_index(),
@@ -211,10 +218,13 @@ static HfsmResult navigation_handle(HfsmMachine* m, const HfsmEvent* e) {
                  ctx->current_nav_point.y);
         finish_current_nav_point();
 
-        /* 临时跑图模式：
-         * 当前先不进入授粉状态；
-         * 到任何导航点后都直接继续下一个导航点，直到最后切返航
-         */
+        if(navigation_point_requires_pollen(&ctx->current_nav_point)) {
+            HfsmState* pollen_state = navigation_get_pollen_state(ctx->current_nav_point.area_type);
+
+            if(pollen_state != NULL)
+                return hfsm.res.transition(pollen_state);
+        }
+
         if(get_current_nav_point_index() >= (get_nav_point_max() - 1u)) {
             log_info("Navigation finished, switch to return home");
             return hfsm.res.transition(s_navigation_return_home);
@@ -268,9 +278,6 @@ static void idle_entry(HfsmMachine* m) {
     ctx->current_area = START_END;
     ctx->back_home_index = 0u;
 
-    /* 非导航状态先关闭“先转向再驱动”门控：
-     * 避免空闲/切态期间保留导航期的底盘约束
-     */
     (void)chassis.set_steer_then_drive_enabled(false);
 }
 
@@ -278,8 +285,15 @@ static void navigation_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_NAVIGATION;
 
-    /* 导航状态要求底盘先完成转向，再开始驱动 */
     (void)chassis.set_steer_then_drive_enabled(true);
+}
+
+static void navigation_start_entry(HfsmMachine* m) {
+    TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
+
+    ctx->current_state_id = TASK_STATE_NAVIGATION_START;
+    (void)asrpro_broadcast(TEAM_INTRO);
+    (void)task_post(&g_app_task, TASK_EVENT_NAV_START_FINISHED);
 }
 
 static void navigation_normal_entry(HfsmMachine* m) {
@@ -367,8 +381,12 @@ static void pollen_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
     ctx->current_state_id = TASK_STATE_POLLEN;
 
-    /* 授粉状态:
-     * 这里预留“语音播报 + 机械臂工作”的公共位置
+    (void)chassis.set_velocity(0.0f, 0.0f, 0.0f);
+    navigation_broadcast_current_point(ctx);
+
+    /* 授粉状态公共入口:
+     * 这里统一做“到点停车 + 按当前点位信息播报”。
+     * 具体执行哪一种授粉动作，交给下面的 A/B/C 子状态决定。
      */
 }
 
@@ -381,7 +399,9 @@ static void pollen_a_action(HfsmMachine* m) {
     (void)m;
 
     /* A 区授粉状态:
-     * 这里预留 A 区机械臂工作流程
+     * 在这里填写 A 区的授粉动作。
+     * 动作完成后，请调用:
+     * (void)task_post(&g_app_task, TASK_EVENT_POLLEN_FINISHED);
      */
 }
 
@@ -394,7 +414,9 @@ static void pollen_b_action(HfsmMachine* m) {
     (void)m;
 
     /* B 区授粉状态:
-     * 这里预留 B 区机械臂工作流程
+     * 在这里填写 B 区的授粉动作。
+     * 动作完成后，请调用:
+     * (void)task_post(&g_app_task, TASK_EVENT_POLLEN_FINISHED);
      */
 }
 
@@ -407,7 +429,9 @@ static void pollen_c_action(HfsmMachine* m) {
     (void)m;
 
     /* C 区授粉状态:
-     * 这里预留 C 区机械臂工作流程
+     * 在这里填写 C 区的授粉动作。
+     * 动作完成后，请调用:
+     * (void)task_post(&g_app_task, TASK_EVENT_POLLEN_FINISHED);
      */
 }
 
@@ -502,19 +526,65 @@ static void navigation_load_next_point(TaskContext* ctx) {
     ctx->current_area = ctx->current_nav_point.area_type;
     ctx->nav_start_ms = delay_now_ms();
     ctx->nav_braking = false;
-
-    if(ctx->current_area == AREA_A) {
-        /* 临时排查导航停在第一点的问题：
-         * 先屏蔽 A 区导航入口的机械臂同步动作；
-         * 确认是否是机械臂动作阻塞了后续导航
-         */
-    }
-
-    // (void)asrpro_broadcast(TEAM_INTRO);
     log_info("Navigate point %u -> (%.2f, %.2f)",
              get_current_nav_point_index(),
              ctx->current_nav_point.x,
              ctx->current_nav_point.y);
+}
+
+static HfsmState* navigation_get_pollen_state(AreaType area) {
+    switch(area) {
+    case AREA_A:
+        return s_pollen_a;
+    case AREA_B:
+        return s_pollen_b;
+    case AREA_C:
+        return s_pollen_c;
+    default:
+        return NULL;
+    }
+}
+
+static bool navigation_point_requires_pollen(const NavPoint* nav_point) {
+    if(nav_point == NULL)
+        return false;
+
+    return navigation_get_pollen_state(nav_point->area_type) != NULL;
+}
+
+static AsrProCmd navigation_make_x_broadcast_cmd(XFlowerType flowers) {
+    return (AsrProCmd)(X_000 + ((flowers.left ? 1 : 0) << 2) + ((flowers.mid ? 1 : 0) << 1) +
+                       (flowers.right ? 1 : 0));
+}
+
+static AsrProCmd navigation_make_y_broadcast_cmd(YFlowerType flowers) {
+    return (AsrProCmd)(Y_000 + ((flowers.up ? 1 : 0) << 2) + ((flowers.mid ? 1 : 0) << 1) +
+                       (flowers.down ? 1 : 0));
+}
+
+static void navigation_broadcast_current_point(const TaskContext* ctx) {
+    AsrProCmd cmd;
+
+    if(ctx == NULL)
+        return;
+
+    /* 当前默认按点位中登记的花型信息进行播报。
+     * 如果后面你们确定某个区域应优先播报 y_flowers[i] 或者需要连续播报多条，
+     * 直接在这里改映射即可，不需要再动状态机流程。
+     */
+    switch(ctx->current_nav_point.area_type) {
+    case AREA_B:
+        cmd = navigation_make_y_broadcast_cmd(ctx->current_nav_point.y_flowers[0]);
+        break;
+    case AREA_A:
+    case AREA_C:
+        cmd = navigation_make_x_broadcast_cmd(ctx->current_nav_point.x_flowers[0]);
+        break;
+    default:
+        return;
+    }
+
+    (void)asrpro_broadcast(cmd);
 }
 
 static void navigation_start_brake_hold(TaskContext* ctx) {
