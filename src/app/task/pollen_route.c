@@ -30,7 +30,7 @@ static const PollenRouteItem pollen_route_items[] = {
                     .steps[3] = JOINTS(1.606f, 2.315f, 5.875f, 2.152f, 3.141f) } },
     { .nav_index = 3u,
       .sequence = { .step_count = 2u,
-                    .steps[0] = JOINTS(4.794f, 2.960f, 5.964f, 1.928f, 3.141f),
+                    .steps[0] = JOINTS(4.608f, 2.810f, 6.114f, 1.927f, 3.141f),
                     .steps[1] = JOINTS(4.714f, 2.315f, 5.875f, 2.152f, 3.141f) } },
 
     { .nav_index = 4u,
@@ -59,9 +59,9 @@ static const PollenRouteItem pollen_route_items[] = {
     /** B 区 */
     { .nav_index = 10u,
       .sequence = { .step_count = 4u,
-                    .steps[0] = JOINTS(0.968f, 1.908f, 4.619f, 2.892f, 2.086f),
+                    .steps[0] = JOINTS(0.904f, 1.910f, 4.705f, 2.888f, 2.229f),
                     .steps[1] = JOINTS(0.206f, 1.591f, 5.380f, 2.172f, 3.141f),
-                    .steps[2] = JOINTS(0.091f, 1.914f, 5.058f, 2.517f, 3.571f),
+                    .steps[2] = JOINTS(0.043f, 1.994f, 5.127f, 2.338f, 3.625f),
                     .steps[3] = JOINTS(0.206f, 1.591f, 5.380f, 2.172f, 3.141f) } },
     { .nav_index = 11u,
       .sequence = { .step_count = 2u,

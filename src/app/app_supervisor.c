@@ -1,5 +1,6 @@
 #include "app_supervisor.h"
 
+#include "arm.h"
 #include "chassis.h"
 #include "chassis_yaw_hold.h"
 #include "fs_ia10b.h"
@@ -13,11 +14,17 @@
 
 static bool remote_takeover_latched = false;
 static bool auto_started = false;
+static bool arm_torque_released = false;
 
 /**
  * @brief SWD 三挡开关通道索引
  */
 #define ENTRY_REMOTE_CH_SWD 7u
+
+/**
+ * @brief SWA 三档开关通道索引
+ */
+#define ENTRY_REMOTE_CH_SWA 4u
 
 /**
  * @brief VRA 旋钮通道索引
@@ -44,6 +51,36 @@ static bool auto_started = false;
  */
 #define REMOTE_VR_HIGH_THRESHOLD 1800u
 
+static void app_supervisor_update_arm_torque(void) {
+    bool should_release = false;
+    ArmStatus status;
+
+    if(remote_takeover_latched == true && ibus_is_online(100u) &&
+       ibus_get_channel(ENTRY_REMOTE_CH_SWA) == REMOTE_SW_HIGH)
+        should_release = true;
+
+    if(should_release == true && arm_torque_released == false) {
+        status = arm.stop();
+        if(status == ARM_OK) {
+            arm_torque_released = true;
+            log_info("ARM torque released for chassis remote");
+        }
+        else {
+            log_warn("ARM torque release failed: %s", arm.status_str(status));
+        }
+    }
+    else if(should_release == false && arm_torque_released == true) {
+        status = arm.enable();
+        if(status == ARM_OK) {
+            arm_torque_released = false;
+            log_info("ARM torque enabled");
+        }
+        else {
+            log_warn("ARM torque enable failed: %s", arm.status_str(status));
+        }
+    }
+}
+
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 /**
@@ -52,6 +89,7 @@ static bool auto_started = false;
 void app_supervisor_init(void) {
     remote_takeover_latched = false;
     auto_started = false;
+    arm_torque_released = false;
 }
 
 /**
@@ -74,6 +112,8 @@ void app_supervisor_process(void) {
         log_info("Remote 释放，切换到自主任务模式");
         (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_AUTO);
     }
+
+    app_supervisor_update_arm_torque();
 
     if(auto_started == false &&
        ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_HIGH &&

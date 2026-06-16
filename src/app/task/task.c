@@ -329,6 +329,7 @@ static void pollen_action(HfsmMachine* m) {
 
 static void remote_entry(HfsmMachine* m) {
     TaskContext* ctx = (TaskContext*)hfsm_core.context(m);
+
     if(ctx->current_state_id != TASK_STATE_REMOTE)
         ctx->state_before_remote = ctx->current_state_id;
     ctx->current_state_id = TASK_STATE_REMOTE;

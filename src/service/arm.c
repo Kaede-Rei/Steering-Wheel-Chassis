@@ -49,6 +49,7 @@ const struct ArmInterface arm_interface = {
     .move_position = arm_move_position,
     .move_orientation = arm_move_orientation,
     .stop = arm_stop,
+    .enable = arm_enable,
     .fk = arm_fk,
     .ik = arm_ik,
     .is_ready = arm_is_ready,
@@ -159,6 +160,7 @@ ArmConfig arm_default_config(void) {
 
     config.servo_interface = NULL;
     config.stop_servo = NULL;
+    config.enable_servo = NULL;
     config.has_kinematic_model = false;
     for(uint8_t i = 0u; i < ARM_DOF; i++) {
         config.servo_id[i] = i;
@@ -430,6 +432,27 @@ ArmStatus arm_stop(void) {
 
     for(uint8_t i = 0u; i < ARM_DOF; i++) {
         if(s_arm.config.stop_servo(s_arm.config.servo_id[i]) != SERVO_STATUS_OK) {
+            return ARM_SERVO_FAILED;
+        }
+    }
+
+    return ARM_OK;
+}
+
+/**
+ * @brief 使能全部舵机扭矩
+ * @return ArmStatus 服务状态码
+ */
+ArmStatus arm_enable(void) {
+    if(s_arm.initialized == false)
+        return ARM_NOT_INITIALIZED;
+
+    if(s_arm.config.enable_servo == NULL) {
+        return ARM_DEPENDENCY_MISSING;
+    }
+
+    for(uint8_t i = 0u; i < ARM_DOF; i++) {
+        if(s_arm.config.enable_servo(s_arm.config.servo_id[i]) != SERVO_STATUS_OK) {
             return ARM_SERVO_FAILED;
         }
     }
