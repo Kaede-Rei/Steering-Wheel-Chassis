@@ -2,6 +2,7 @@
 
 #include "arm.h"
 #include "chassis.h"
+#include "chassis_yaw_hold.h"
 #include "delay.h"
 #include "log.h"
 #include "odom.h"
@@ -60,7 +61,7 @@ TaskNavResult task_nav_process(TaskNavigationContext* nav) {
     bool was_braking;
 
     if(nav == NULL)
-        return TASK_NAV_RESULT_ERROR;
+        return TASK_NAV_RESULT_ROUTE_ERROR;
 
     was_braking = nav->braking;
     if(navigation_service_brake_hold(nav))
@@ -140,7 +141,7 @@ TaskNavResult task_nav_return_home_process(TaskNavigationContext* nav, TaskRetur
     TaskNavResult result;
 
     if(nav == NULL || ret == NULL)
-        return TASK_NAV_RESULT_ERROR;
+        return TASK_NAV_RESULT_ROUTE_ERROR;
 
     result = task_nav_process(nav);
     if(result != TASK_NAV_RESULT_REACHED)
@@ -156,9 +157,45 @@ TaskNavResult task_nav_return_home_process(TaskNavigationContext* nav, TaskRetur
 
     ret->back_home_index++;
     if(navigation_load_point(nav, ret->back_home_index, true) == false)
-        return TASK_NAV_RESULT_ERROR;
+        return TASK_NAV_RESULT_ROUTE_ERROR;
 
     return TASK_NAV_RESULT_RUNNING;
+}
+
+/**
+ * @brief 取消导航上层动作
+ * @param nav 导航上下文
+ */
+void task_nav_cancel(TaskNavigationContext* nav) {
+    task_nav_reset(nav);
+    chassis_yaw_hold_disable();
+    (void)chassis.brake();
+}
+
+/**
+ * @brief 获取导航处理结果字符串
+ * @param result 导航处理结果
+ * @return const char* 固定字符串，用于日志输出
+ */
+const char* task_nav_result_str(TaskNavResult result) {
+    switch(result) {
+        case TASK_NAV_RESULT_RUNNING:
+            return "RUNNING";
+        case TASK_NAV_RESULT_REACHED:
+            return "REACHED";
+        case TASK_NAV_RESULT_FINISHED:
+            return "FINISHED";
+        case TASK_NAV_RESULT_ROUTE_ERROR:
+            return "ROUTE_ERROR";
+        case TASK_NAV_RESULT_ODOM_ERROR:
+            return "ODOM_ERROR";
+        case TASK_NAV_RESULT_CHASSIS_ERROR:
+            return "CHASSIS_ERROR";
+        case TASK_NAV_RESULT_TIMEOUT:
+            return "TIMEOUT";
+        default:
+            return "UNKNOWN";
+    }
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //

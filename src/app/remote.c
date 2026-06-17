@@ -240,6 +240,17 @@ void remote_process(void) {
 }
 
 /**
+ * @brief 取消遥控控制输出
+ */
+void remote_control_cancel(void) {
+    s_command.vx = 0.0f;
+    s_command.vy = 0.0f;
+    s_command.wz = 0.0f;
+    chassis_yaw_hold_reset();
+    (void)chassis.brake();
+}
+
+/**
  * @brief 获取最近一次遥控应用层输出的命令
  * @param out 输出命令缓冲区
  * @return bool `true` 表示遥控链路在线

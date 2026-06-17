@@ -1,7 +1,7 @@
 #include "task_pollen.h"
 
-#include "arm.h"
 #include "asrpro.h"
+#include "arm.h"
 #include "delay.h"
 #include "log.h"
 #include "pollen_route.h"
@@ -22,7 +22,7 @@
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
 static void pollen_sequence_reset(TaskPollenSequenceContext* sequence);
-static bool pollen_load_sequence(TaskPollenSequenceContext* sequence, uint8_t nav_index);
+static TaskPollenResult pollen_load_sequence(TaskPollenSequenceContext* sequence, uint8_t nav_index);
 static bool pollen_step_reached(const FiveDofArmJointArray* target);
 static void pollen_log_step_timeout(uint8_t step, const FiveDofArmJointArray* target);
 static AsrProCmd pollen_make_x_broadcast_cmd(XFlowerType flowers);
@@ -50,17 +50,21 @@ void task_pollen_reset(TaskPollenContext* pollen) {
  * @param area 当前区域
  * @param point 当前导航点
  */
-void task_pollen_start(TaskPollenContext* pollen, uint8_t nav_index, AreaType area, const NavPoint* point) {
+TaskPollenResult task_pollen_start(TaskPollenContext* pollen, uint8_t nav_index, AreaType area, const NavPoint* point) {
+    TaskPollenResult result;
     if(pollen == NULL)
-        return;
+        return TASK_POLLEN_RESULT_ROUTE_MISSING;
 
     TaskPollenSequenceContext* sequence;
     AsrProCmd cmd;
 
     sequence = &pollen->sequence;
 
-    if(pollen_load_sequence(sequence, nav_index) == false)
+    result = pollen_load_sequence(sequence, nav_index);
+    if(result != TASK_POLLEN_RESULT_RUNNING) {
         log_error("Pollen sequence missing at nav point %u", nav_index);
+        return result;
+    }
 
     if(pollen_make_broadcast_cmd(area, point, &cmd)) {
         sequence->broadcast_pending = true;
@@ -76,6 +80,8 @@ void task_pollen_start(TaskPollenContext* pollen, uint8_t nav_index, AreaType ar
     else {
         sequence->prepose_waiting = false;
     }
+
+    return TASK_POLLEN_RESULT_RUNNING;
 }
 
 /**
@@ -91,7 +97,7 @@ TaskPollenResult task_pollen_process(TaskPollenContext* pollen) {
 
 
     if(pollen == NULL)
-        return TASK_POLLEN_RESULT_ERROR;
+        return TASK_POLLEN_RESULT_ROUTE_MISSING;
 
     sequence = &pollen->sequence;
 
@@ -103,7 +109,7 @@ TaskPollenResult task_pollen_process(TaskPollenContext* pollen) {
         else {
             if((now - sequence->prepose_start_ms) >= TASK_POLLEN_PREPOSE_TIMEOUT_MS) {
                 log_error("Pollen prepose wait timeout");
-                return TASK_POLLEN_RESULT_ERROR;
+                return TASK_POLLEN_RESULT_PREPOSE_TIMEOUT;
             }
 
             return TASK_POLLEN_RESULT_RUNNING;
@@ -144,7 +150,7 @@ TaskPollenResult task_pollen_process(TaskPollenContext* pollen) {
         arm_status = arm.move_joints(target, TASK_ARM_SPEED_RAD_S);
         if(arm_status != ARM_OK) {
             log_error("Pollen arm step %u start failed: %s", sequence->current_step, arm.status_str(arm_status));
-            return TASK_POLLEN_RESULT_ERROR;
+            return TASK_POLLEN_RESULT_ARM_COMMAND_FAILED;
         }
 
         sequence->step_started = true;
@@ -174,10 +180,45 @@ TaskPollenResult task_pollen_process(TaskPollenContext* pollen) {
 
     if((now - sequence->step_start_ms) >= TASK_POLLEN_STEP_TIMEOUT_MS) {
         pollen_log_step_timeout(sequence->current_step, target);
-        return TASK_POLLEN_RESULT_ERROR;
+        return TASK_POLLEN_RESULT_ARM_FEEDBACK_TIMEOUT;
     }
 
     return TASK_POLLEN_RESULT_RUNNING;
+}
+
+/**
+ * @brief 取消授粉动作序列
+ * @param pollen 授粉上下文
+ */
+void task_pollen_cancel(TaskPollenContext* pollen) {
+    task_pollen_reset(pollen);
+    (void)arm.stop();
+}
+
+/**
+ * @brief 获取授粉处理结果字符串
+ * @param result 授粉处理结果
+ * @return const char* 固定字符串，用于日志输出
+ */
+const char* task_pollen_result_str(TaskPollenResult result) {
+    switch(result) {
+        case TASK_POLLEN_RESULT_RUNNING:
+            return "RUNNING";
+        case TASK_POLLEN_RESULT_FINISHED:
+            return "FINISHED";
+        case TASK_POLLEN_RESULT_ROUTE_MISSING:
+            return "ROUTE_MISSING";
+        case TASK_POLLEN_RESULT_ARM_COMMAND_FAILED:
+            return "ARM_COMMAND_FAILED";
+        case TASK_POLLEN_RESULT_ARM_FEEDBACK_TIMEOUT:
+            return "ARM_FEEDBACK_TIMEOUT";
+        case TASK_POLLEN_RESULT_PREPOSE_TIMEOUT:
+            return "PREPOSE_TIMEOUT";
+        case TASK_POLLEN_RESULT_BROADCAST_TIMEOUT:
+            return "BROADCAST_TIMEOUT";
+        default:
+            return "UNKNOWN";
+    }
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
@@ -199,26 +240,26 @@ static void pollen_sequence_reset(TaskPollenSequenceContext* sequence) {
  * @param nav_index 当前导航点索引
  * @return bool `true` 表示加载成功
  */
-static bool pollen_load_sequence(TaskPollenSequenceContext* sequence, uint8_t nav_index) {
+static TaskPollenResult pollen_load_sequence(TaskPollenSequenceContext* sequence, uint8_t nav_index) {
     PollenActionSequence action_sequence;
     uint8_t i;
 
     if(sequence == NULL)
-        return false;
+        return TASK_POLLEN_RESULT_ROUTE_MISSING;
 
     pollen_sequence_reset(sequence);
     if(pollen_route_get(nav_index, &action_sequence) == false)
-        return false;
+        return TASK_POLLEN_RESULT_ROUTE_MISSING;
 
     if(action_sequence.step_count > TASK_POLLEN_MAX_STEPS)
-        return false;
+        return TASK_POLLEN_RESULT_ROUTE_MISSING;
 
     sequence->step_count = action_sequence.step_count;
     for(i = 0u; i < action_sequence.step_count; i++) {
         sequence->steps[i] = action_sequence.steps[i];
     }
 
-    return true;
+    return TASK_POLLEN_RESULT_RUNNING;
 }
 
 /**

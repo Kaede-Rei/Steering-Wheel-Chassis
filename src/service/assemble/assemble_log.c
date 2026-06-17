@@ -99,7 +99,7 @@ static void log_parse_command(const char* cmd) {
     }
 
     if(strcmp(cmd, "CHASSIS:START") == 0) {
-        (void)task_post(&g_app_task, TASK_EVENT_START);
+        (void)task_post(TASK_EVENT_START);
         log_info("LOG CMD: CHASSIS:START");
     }
 }

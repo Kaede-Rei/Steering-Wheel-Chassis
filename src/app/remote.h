@@ -36,6 +36,12 @@ void remote_init(void);
 void remote_process(void);
 
 /**
+ * @brief 取消遥控控制输出
+ * @details 故障收口或退出遥控接管时调用，清零最近一次遥控输出、复位 yaw hold，并请求底盘刹车
+ */
+void remote_control_cancel(void);
+
+/**
  * @brief 获取最近一次遥控应用层输出的命令
  * @param out 输出命令缓冲区
  * @return bool `true` 表示遥控链路在线

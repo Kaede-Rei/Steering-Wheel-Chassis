@@ -8,7 +8,6 @@
 #include "task/task.h"
 
 #include <stdbool.h>
-#include <stdint.h>
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
@@ -22,7 +21,7 @@ static bool arm_torque_released = false;
 #define ENTRY_REMOTE_CH_SWD 7u
 
 /**
- * @brief SWA 三档开关通道索引
+ * @brief SWA 三挡开关通道索引
  */
 #define ENTRY_REMOTE_CH_SWA 4u
 
@@ -51,6 +50,59 @@ static bool arm_torque_released = false;
  */
 #define REMOTE_VR_HIGH_THRESHOLD 1800u
 
+// ! ========================= 私 有 函 数 声 明 ========================= ! //
+
+static void app_supervisor_update_mode(void);
+static void app_supervisor_update_arm_torque(void);
+static void app_supervisor_update_auto_start(void);
+static void app_supervisor_apply_safety(void);
+
+// ! ========================= 接 口 函 数 实 现 ========================= ! //
+
+/**
+ * @brief 初始化应用层监督器
+ */
+void app_supervisor_init(void) {
+    remote_takeover_latched = false;
+    auto_started = false;
+    arm_torque_released = false;
+}
+
+/**
+ * @brief 执行一次应用层监督器轮询
+ */
+void app_supervisor_process(void) {
+    app_supervisor_update_mode();
+    app_supervisor_update_arm_torque();
+    app_supervisor_update_auto_start();
+    app_supervisor_apply_safety();
+}
+
+// ! ========================= 私 有 函 数 实 现 ========================= ! //
+
+/**
+ * @brief 根据遥控 SWD 档位更新任务模式
+ */
+static void app_supervisor_update_mode(void) {
+    if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_LOW) {
+        if(remote_takeover_latched == false) {
+            auto_started = false;
+            remote_takeover_latched = true;
+            log_info("Remote takeover, switch to manual mode");
+            (void)task_force_post(TASK_EVENT_SWITCH_TO_REMOTE);
+        }
+    }
+    else if(remote_takeover_latched == true) {
+        auto_started = false;
+        remote_takeover_latched = false;
+        log_info("Remote released, switch to auto mode");
+        (void)task_force_post(TASK_EVENT_SWITCH_TO_AUTO);
+    }
+}
+
+/**
+ * @brief 根据遥控接管状态和 SWA 档位更新机械臂卸力状态
+ */
 static void app_supervisor_update_arm_torque(void) {
     bool should_release = false;
     ArmStatus status;
@@ -81,46 +133,27 @@ static void app_supervisor_update_arm_torque(void) {
     }
 }
 
-// ! ========================= 接 口 函 数 实 现 ========================= ! //
-
 /**
- * @brief 初始化应用层监督器
+ * @brief 判断自主任务启动条件并投递启动事件
  */
-void app_supervisor_init(void) {
-    remote_takeover_latched = false;
-    auto_started = false;
-    arm_torque_released = false;
-}
-
-/**
- * @brief 执行一次应用层监督器轮询
- */
-void app_supervisor_process(void) {
-    if(ibus_is_online(100u) && ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_LOW) {
-        if(remote_takeover_latched == false) {
-            auto_started = false;
-            remote_takeover_latched = true;
-            log_info("Remote 接管，切换到遥控模式");
-            (void)chassis.brake();
-            (void)chassis_yaw_hold_disable();
-            (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_REMOTE);
-        }
-    }
-    else if(remote_takeover_latched == true) {
-        auto_started = false;
-        remote_takeover_latched = false;
-        log_info("Remote 释放，切换到自主任务模式");
-        (void)task_post(&g_app_task, TASK_EVENT_SWITCH_TO_AUTO);
-    }
-
-    app_supervisor_update_arm_torque();
-
+static void app_supervisor_update_auto_start(void) {
     if(auto_started == false &&
+       remote_takeover_latched == false &&
        ibus_get_channel(ENTRY_REMOTE_CH_SWD) == REMOTE_SW_HIGH &&
        ibus_get_channel(REMOTE_CH_VRA) >= REMOTE_VR_HIGH_THRESHOLD &&
        ibus_get_channel(REMOTE_CH_VRB) >= REMOTE_VR_HIGH_THRESHOLD) {
         auto_started = true;
-        log_info("自主任务模式启动");
-        (void)task_post(&g_app_task, TASK_EVENT_START);
+        log_info("Auto task start");
+        (void)task_post(TASK_EVENT_START);
+    }
+}
+
+/**
+ * @brief 应用遥控接管安全策略
+ */
+static void app_supervisor_apply_safety(void) {
+    if(remote_takeover_latched == true) {
+        (void)chassis.brake();
+        (void)chassis_yaw_hold_disable();
     }
 }
