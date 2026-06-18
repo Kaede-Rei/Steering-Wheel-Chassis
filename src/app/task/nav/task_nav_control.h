@@ -1,12 +1,11 @@
-#ifndef _APP_TASK_NAV_CONTROL_H_
-#define _APP_TASK_NAV_CONTROL_H_
-
+#ifndef _task_nav_control_h_
+#define _task_nav_control_h_
 /**
  * @file task_nav_control.h
  * @brief 导航底盘跟踪控制接口
  */
 
-#include "odom.h"
+#include "odom.h" // IWYU pragma: keep
 #include "../task_context.h"
 
 // ! ========================= 接 口 函 数 声 明 ========================= ! //

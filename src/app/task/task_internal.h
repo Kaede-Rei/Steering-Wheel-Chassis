@@ -1,10 +1,9 @@
-#ifndef _APP_TASK_INTERNAL_H_
-#define _APP_TASK_INTERNAL_H_
+#ifndef _app_task_internal_h_
+#define _app_task_internal_h_
 
 /**
  * @file task_internal.h
  * @brief 任务模块内部共享定义
- * @details 仅供 `task.c`、`task/nav/`、`task/pollen/` 内部使用，外部 app/service 不应包含本头文件
  */
 
 #include "hfsm/hfsm.h"

@@ -1,5 +1,5 @@
-#ifndef _APP_TASK_NAV_H_
-#define _APP_TASK_NAV_H_
+#ifndef _app_task_nav_h_
+#define _app_task_nav_h_
 
 /**
  * @file task_nav.h

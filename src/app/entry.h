@@ -1,4 +1,13 @@
-#include "app_supervisor.h"
+#ifndef _app_entry_h_
+#define _app_entry_h_
+
+/**
+ * @file entry.h
+ * @brief CubeMX `main.c` 的应用入口替代层
+ */
+
+#include "app_runtime.h"
+#include "app_status.h"
 #include "arm.h"
 #include "assemble/assemble.h"
 #include "chassis.h"
@@ -6,39 +15,62 @@
 #include "log.h"
 #include "odom.h"
 #include "remote.h"
-#include "rgb_led/rgb_led.h"
-#include "task/task.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 
 // ! ========================= 变 量 声 明 ========================= ! //
 
-static ms_t log_task = 0;
-static ms_t heartbeat_task = 0;
-static uint8_t remote_tick = 0;
-static uint8_t arm_tick = 0;
-static uint8_t odom_tick = 0;
-static uint8_t led_state = 0u;
-static ms_t arm_refresh_error_task = 0;
-static uint16_t arm_refresh_fail_count = 0u;
+/**
+ * @brief 250Hz 节拍计数器
+ * @details 以 500Hz 主循环为基准，每 2 个周期触发一次
+ */
+static uint8_t s_entry_250hz_tick = 0u;
+
+/**
+ * @brief 100Hz 节拍计数器
+ * @details 以 500Hz 主循环为基准，每 5 个周期触发一次
+ */
+static uint8_t s_entry_100hz_tick = 0u;
+
+/**
+ * @brief 50Hz 节拍计数器
+ * @details 以 500Hz 主循环为基准，每 10 个周期触发一次
+ */
+static uint8_t s_entry_50hz_tick = 0u;
+
+/**
+ * @brief 机械臂刷新异常日志节流计时器
+ */
+static ms_t s_entry_arm_refresh_log_timer = 0;
+
+/**
+ * @brief 机械臂状态刷新连续失败计数
+ */
+static uint16_t s_entry_arm_refresh_fail_count = 0u;
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
-static void entry_fast_loop_500hz(void);
-static void entry_chassis_process_500hz(void);
-static void entry_odom_process_250hz(void);
-static void entry_remote_process_100hz(void);
-static void entry_arm_refresh_50hz(void);
-static void entry_app_process_500hz(void);
-static void entry_background_loop(void);
-static void entry_led_status_process(void);
-static void entry_debug_log_process(void);
+/**
+ * @brief 判断当前 500Hz 周期是否命中 250Hz 节拍
+ */
+static bool entry_tick_250hz(void);
+
+/**
+ * @brief 判断当前 500Hz 周期是否命中 100Hz 节拍
+ */
+static bool entry_tick_100hz(void);
+
+/**
+ * @brief 判断当前 500Hz 周期是否命中 50Hz 节拍
+ */
+static bool entry_tick_50hz(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
 /**
- * @brief 程序初始化入口函数
+ * @brief 系统初始化入口
+ * @details 按照实际启动依赖顺序完成底层装配、应用层初始化与定时调度启动
  */
 static inline void entry_init(void) {
     if(assemble_delay() != SYSTEM_STATUS_OK)
@@ -80,11 +112,9 @@ static inline void entry_init(void) {
     delay_ms(100);
 
     remote_init();
-    app_supervisor_init();
-    delay_ms(100);
-
-    task_init();
-    log_info("BOOT task init step done");
+    app_runtime_init();
+    app_status_init();
+    log_info("BOOT app runtime/status init step done");
     delay_ms(100);
 
     if(assemble_tim6_500hz() != SYSTEM_STATUS_OK)
@@ -97,152 +127,89 @@ static inline void entry_init(void) {
 }
 
 /**
- * @brief 程序主循环入口函数
+ * @brief 主循环调度入口
+ * @details
+ *
+ * 500Hz:
+ * - chassis.process()
+ * - app_runtime_process()
+ *
+ * 250Hz:
+ * - odom.process()
+ *
+ * 100Hz:
+ * - remote_process()
+ *
+ * 50Hz:
+ * - arm.refresh_current_state()
+ *
+ * background:
+ * - app_status_process()
+ *
  */
 static inline void entry_loop(void) {
-    entry_fast_loop_500hz();
-    entry_background_loop();
+    if(tim6_500hz_flag) {
+        tim6_500hz_flag = false;
+
+        /** 500Hz 底盘基础控制主循环 */
+        chassis.process();
+
+        /** 250Hz 里程计与姿态融合更新 */
+        if(entry_tick_250hz())
+            odom.process();
+
+        /** 100Hz 遥控输入解析与底盘手动控制 */
+        if(entry_tick_100hz())
+            remote_process();
+
+        /** 50Hz 机械臂反馈刷新与稳定性监测 */
+        if(entry_tick_50hz()) {
+            ArmStatus arm_status = arm.refresh_current_state();
+
+            if(arm_status == ARM_OK) {
+                if(s_entry_arm_refresh_fail_count >= 10u)
+                    log_info("ARM refresh recovered after %u failures", s_entry_arm_refresh_fail_count);
+                s_entry_arm_refresh_fail_count = 0u;
+            }
+            else {
+                s_entry_arm_refresh_fail_count++;
+                if(s_entry_arm_refresh_fail_count >= 10u && delay_nb_ms(&s_entry_arm_refresh_log_timer, 1000))
+                    log_warn("ARM refresh unstable: %s, consecutive=%u", arm.status_str(arm_status), s_entry_arm_refresh_fail_count);
+            }
+        }
+
+        /** 500Hz 应用层运行入口，内部统一处理 supervisor + task 职责 */
+        app_runtime_process();
+    }
+
+    /** 后台状态显示与调试输出 */
+    app_status_process();
 }
 
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 /**
- * @brief 500Hz 快速调度循环
+ * @brief 250Hz 节拍 helper
  */
-static void entry_fast_loop_500hz(void) {
-    if(tim6_500hz_flag == false)
-        return;
-
-    tim6_500hz_flag = false;
-
-    entry_chassis_process_500hz();
-    entry_odom_process_250hz();
-    entry_remote_process_100hz();
-    entry_arm_refresh_50hz();
-    entry_app_process_500hz();
+static bool entry_tick_250hz(void) {
+    s_entry_250hz_tick = (uint8_t)((s_entry_250hz_tick + 1u) % 2u);
+    return s_entry_250hz_tick == 0u;
 }
 
 /**
- * @brief 执行后台低频任务
+ * @brief 100Hz 节拍 helper
  */
-static void entry_background_loop(void) {
-    entry_led_status_process();
-    entry_debug_log_process();
+static bool entry_tick_100hz(void) {
+    s_entry_100hz_tick = (uint8_t)((s_entry_100hz_tick + 1u) % 5u);
+    return s_entry_100hz_tick == 0u;
 }
 
 /**
- * @brief 执行底盘基础反馈刷新
+ * @brief 50Hz 节拍 helper
  */
-static void entry_chassis_process_500hz(void) {
-    chassis.process();
+static bool entry_tick_50hz(void) {
+    s_entry_50hz_tick = (uint8_t)((s_entry_50hz_tick + 1u) % 10u);
+    return s_entry_50hz_tick == 0u;
 }
 
-/**
- * @brief 执行 250Hz 里程计基础反馈刷新
- */
-static void entry_odom_process_250hz(void) {
-    if(++odom_tick % 2 != 0)
-        return;
-
-    odom.process();
-    odom_tick = 0;
-}
-
-/**
- * @brief 执行 100Hz 遥控输入和接管控制刷新
- */
-static void entry_remote_process_100hz(void) {
-    if(++remote_tick % 5 != 0)
-        return;
-
-    remote_process();
-    remote_tick = 0;
-}
-
-/**
- * @brief 执行 50Hz 机械臂反馈刷新并统计连续失败次数
- */
-static void entry_arm_refresh_50hz(void) {
-    ArmStatus arm_status;
-
-    if(++arm_tick % 10 != 0)
-        return;
-
-    arm_status = arm.refresh_current_state();
-    if(arm_status == ARM_OK) {
-        if(arm_refresh_fail_count >= 10u) {
-            log_info("ARM refresh recovered after %u failures", arm_refresh_fail_count);
-        }
-        arm_refresh_fail_count = 0u;
-    }
-    else {
-        arm_refresh_fail_count++;
-        if(arm_refresh_fail_count >= 10u && delay_nb_ms(&arm_refresh_error_task, 1000)) {
-            log_warn("ARM refresh unstable: %s, consecutive=%u",
-                     arm.status_str(arm_status),
-                     arm_refresh_fail_count);
-        }
-    }
-
-    arm_tick = 0;
-}
-
-/**
- * @brief 执行应用层监督器和任务状态机
- */
-static void entry_app_process_500hz(void) {
-    app_supervisor_process();
-    task_process();
-}
-
-/**
- * @brief 刷新 LED 状态显示
- */
-static void entry_led_status_process(void) {
-    if(delay_nb_ms(&heartbeat_task, 1000) == false)
-        return;
-
-    RemoteCommand remote_command;
-    const bool chassis_ready = chassis.is_ready();
-    const bool remote_online = remote_get_command(&remote_command);
-    uint8_t target_state = chassis_ready ? 1u : 0u;
-
-    if(task_has_fault())
-        target_state = 3u;
-    else if(target_state == 1u && remote_online)
-        target_state = 2u;
-
-    if(led_state == target_state)
-        return;
-
-    if(target_state == 3u)
-        rgb_led.fill(255U, 128U, 0U);
-    else if(target_state == 2u)
-        rgb_led.fill(0U, 0U, 255U);
-    else if(target_state == 1u)
-        rgb_led.fill(0U, 255U, 0U);
-    else
-        rgb_led.fill(255U, 0U, 0U);
-
-    if(rgb_led.show() == RGB_LED_STATUS_OK)
-        led_state = target_state;
-
-    log_info("Chassis %s, Remote %s, TaskFault %s",
-             chassis_ready ? "Ready" : "Not Ready",
-             remote_online ? "Online" : "Offline",
-             task_has_fault() ? "Yes" : "No");
-}
-
-/**
- * @brief 周期性输出调试日志
- */
-static void entry_debug_log_process(void) {
-    if(delay_nb_ms(&log_task, 1000) == false)
-        return;
-
-    const FiveDofArmJointArray* arm_joints;
-
-    arm_joints = arm.get_current_joints();
-    if(arm_joints != 0)
-        log_info("J0-4: %f, %f, %f, %f, %f", arm_joints->q[0], arm_joints->q[1], arm_joints->q[2], arm_joints->q[3], arm_joints->q[4]);
-}
+#endif

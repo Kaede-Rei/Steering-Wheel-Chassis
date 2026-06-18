@@ -1,6 +1,5 @@
-#ifndef _APP_TASK_POLLEN_H_
-#define _APP_TASK_POLLEN_H_
-
+#ifndef _app_task_pollen_h_
+#define _app_task_pollen_h_
 /**
  * @file task_pollen.h
  * @brief 授粉子任务接口

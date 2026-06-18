@@ -1,5 +1,5 @@
-#ifndef _APP_REMOTE_H_
-#define _APP_REMOTE_H_
+#ifndef _app_remote_h_
+#define _app_remote_h_
 
 /**
  * @file remote.h

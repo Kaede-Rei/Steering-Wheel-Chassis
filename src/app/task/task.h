@@ -1,10 +1,9 @@
-#ifndef _APP_TASK_H_
-#define _APP_TASK_H_
+#ifndef _app_task_h_
+#define _app_task_h_
 
 /**
  * @file task.h
- * @brief 比赛任务状态机对外接口
- * @details 本头文件只暴露应用层调度、事件投递和故障查询接口，外部模块不直接访问 HFSM 实例和任务上下文
+ * @brief 任务状态机对外接口
  */
 
 #include "task_context.h"
