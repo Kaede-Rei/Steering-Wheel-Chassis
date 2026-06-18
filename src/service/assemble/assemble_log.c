@@ -21,6 +21,8 @@ static bool s_rx_active = false;
 static uint8_t s_rx_byte = 0u;
 static uint8_t s_rx_len = 0u;
 static char s_rx_cmd[LOG_RX_CMD_MAX_LEN] = { 0 };
+static volatile bool s_rx_cmd_ready = false;
+static char s_pending_cmd[LOG_RX_CMD_MAX_LEN] = { 0 };
 
 // ! ========================= 私 有 函 数 声 明 ========================= ! //
 
@@ -28,6 +30,7 @@ static void log_rx_complete_callback(void);
 static void log_error_callback(void);
 static void log_feed_byte(uint8_t byte);
 static bool log_restart_receive(void);
+static bool log_take_pending_command(char* out, uint32_t out_size);
 static void log_parse_command(const char* cmd);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
@@ -54,6 +57,16 @@ SystemStatus assemble_log(void) {
     return SYSTEM_STATUS_OK;
 }
 
+void assemble_log_process(void) {
+    char cmd[LOG_RX_CMD_MAX_LEN];
+
+    if(!log_take_pending_command(cmd, sizeof(cmd))) {
+        return;
+    }
+
+    log_parse_command(cmd);
+}
+
 // ! ========================= 私 有 函 数 实 现 ========================= ! //
 
 static void log_rx_complete_callback(void) {
@@ -65,6 +78,11 @@ static void log_rx_complete_callback(void) {
 static void log_error_callback(void) {
     s_rx_active = false;
     s_rx_len = 0u;
+    __HAL_UART_CLEAR_PEFLAG(&huart1);
+    __HAL_UART_CLEAR_FEFLAG(&huart1);
+    __HAL_UART_CLEAR_NEFLAG(&huart1);
+    __HAL_UART_CLEAR_OREFLAG(&huart1);
+    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
     (void)uart_abort_receive_it(&huart1);
     (void)log_restart_receive();
 }
@@ -73,7 +91,8 @@ static void log_feed_byte(uint8_t byte) {
     if(byte == '\r' || byte == '\n') {
         if(s_rx_len > 0u) {
             s_rx_cmd[s_rx_len] = '\0';
-            log_parse_command(s_rx_cmd);
+            memcpy(s_pending_cmd, s_rx_cmd, s_rx_len + 1u);
+            s_rx_cmd_ready = true;
             s_rx_len = 0u;
         }
         return;
@@ -89,8 +108,43 @@ static void log_feed_byte(uint8_t byte) {
 
 static bool log_restart_receive(void) {
     s_rx_byte = 0u;
+    __HAL_UART_CLEAR_PEFLAG(&huart1);
+    __HAL_UART_CLEAR_FEFLAG(&huart1);
+    __HAL_UART_CLEAR_NEFLAG(&huart1);
+    __HAL_UART_CLEAR_OREFLAG(&huart1);
+    __HAL_UART_CLEAR_IDLEFLAG(&huart1);
     s_rx_active = uart_receive_it(&huart1, &s_rx_byte, 1u);
     return s_rx_active;
+}
+
+static bool log_take_pending_command(char* out, uint32_t out_size) {
+    uint32_t primask;
+
+    if(out == NULL || out_size == 0u) {
+        return false;
+    }
+
+    if(!s_rx_cmd_ready) {
+        return false;
+    }
+
+    primask = __get_PRIMASK();
+    __disable_irq();
+    if(!s_rx_cmd_ready) {
+        if(primask == 0u) {
+            __enable_irq();
+        }
+        return false;
+    }
+
+    strncpy(out, s_pending_cmd, out_size - 1u);
+    out[out_size - 1u] = '\0';
+    s_rx_cmd_ready = false;
+    if(primask == 0u) {
+        __enable_irq();
+    }
+
+    return true;
 }
 
 static void log_parse_command(const char* cmd) {

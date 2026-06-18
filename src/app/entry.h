@@ -148,6 +148,8 @@ static inline void entry_init(void) {
  *
  */
 static inline void entry_loop(void) {
+    assemble_log_process();
+
     if(tim6_500hz_flag) {
         tim6_500hz_flag = false;
 

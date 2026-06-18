@@ -16,6 +16,7 @@ extern volatile bool tim6_500hz_flag;
 
 SystemStatus assemble_delay(void);
 SystemStatus assemble_log(void);
+void assemble_log_process(void);
 SystemStatus assemble_rgb(void);
 SystemStatus assemble_imu(void);
 SystemStatus assemble_chassis(void);
