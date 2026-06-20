@@ -22,6 +22,11 @@
 // ! ========================= 变 量 声 明 ========================= ! //
 
 /**
+ * @brief 系统初始化状态标志
+ */
+static bool init_ok = false;
+
+/**
  * @brief 250Hz 节拍计数器
  * @details 以 500Hz 主循环为基准，每 2 个周期触发一次
  */
@@ -54,17 +59,17 @@ static uint16_t s_entry_arm_refresh_fail_count = 0u;
 /**
  * @brief 判断当前 500Hz 周期是否命中 250Hz 节拍
  */
-static bool entry_tick_250hz(void);
+static inline bool entry_tick_250hz(void);
 
 /**
  * @brief 判断当前 500Hz 周期是否命中 100Hz 节拍
  */
-static bool entry_tick_100hz(void);
+static inline bool entry_tick_100hz(void);
 
 /**
  * @brief 判断当前 500Hz 周期是否命中 50Hz 节拍
  */
-static bool entry_tick_50hz(void);
+static inline bool entry_tick_50hz(void);
 
 // ! ========================= 接 口 函 数 实 现 ========================= ! //
 
@@ -124,6 +129,8 @@ static inline void entry_init(void) {
 
     log_info("System initialized successfully");
     delay_ms(500);
+
+    init_ok = true;
 }
 
 /**
@@ -148,6 +155,11 @@ static inline void entry_init(void) {
  *
  */
 static inline void entry_loop(void) {
+    if(!init_ok) {
+        log_error("System not initialized, skipping entry loop");
+        return;
+    }
+
     assemble_log_process();
 
     if(tim6_500hz_flag) {
@@ -193,7 +205,7 @@ static inline void entry_loop(void) {
 /**
  * @brief 250Hz 节拍 helper
  */
-static bool entry_tick_250hz(void) {
+static inline bool entry_tick_250hz(void) {
     s_entry_250hz_tick = (uint8_t)((s_entry_250hz_tick + 1u) % 2u);
     return s_entry_250hz_tick == 0u;
 }
@@ -201,7 +213,7 @@ static bool entry_tick_250hz(void) {
 /**
  * @brief 100Hz 节拍 helper
  */
-static bool entry_tick_100hz(void) {
+static inline bool entry_tick_100hz(void) {
     s_entry_100hz_tick = (uint8_t)((s_entry_100hz_tick + 1u) % 5u);
     return s_entry_100hz_tick == 0u;
 }
@@ -209,7 +221,7 @@ static bool entry_tick_100hz(void) {
 /**
  * @brief 50Hz 节拍 helper
  */
-static bool entry_tick_50hz(void) {
+static inline bool entry_tick_50hz(void) {
     s_entry_50hz_tick = (uint8_t)((s_entry_50hz_tick + 1u) % 10u);
     return s_entry_50hz_tick == 0u;
 }
