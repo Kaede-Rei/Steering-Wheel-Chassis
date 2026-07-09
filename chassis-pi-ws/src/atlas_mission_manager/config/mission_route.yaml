@@ -59,7 +59,7 @@ mission:
     # A 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_a_02_down"
       nav_index: 2
-      x: 0.71
+      x: 0.75
       y: -0.08
       yaw: 0.00
       area: "AREA_A"
@@ -82,7 +82,7 @@ mission:
     # A 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_a_03_none"
       nav_index: 3
-      x: 1.28
+      x: 1.35
       y: -0.08
       yaw: 0.00
       area: "AREA_A"
@@ -105,7 +105,7 @@ mission:
     # A 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_a_04_down"
       nav_index: 4
-      x: 1.83
+      x: 1.93
       y: -0.08
       yaw: 0.00
       area: "AREA_A"
@@ -128,7 +128,7 @@ mission:
     # 过渡点，只执行底盘移动，arrival_jobs 保持为空
     - id: "pass_05_turn_entry"
       nav_index: 5
-      x: 2.19
+      x: 2.34
       y: -0.08
       yaw: 0.00
       area: "PASS_BY"
@@ -142,7 +142,7 @@ mission:
     # 过渡点，只执行底盘移动，arrival_jobs 保持为空
     - id: "pass_06_turn_down"
       nav_index: 6
-      x: 2.19
+      x: 2.34
       y: -0.89
       yaw: 0.00
       area: "PASS_BY"
@@ -156,7 +156,7 @@ mission:
     # B 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_b_07_right"
       nav_index: 7
-      x: 1.77
+      x: 1.87
       y: -0.89
       yaw: 0.00
       area: "AREA_B"
@@ -179,7 +179,7 @@ mission:
     # B 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_b_08_right"
       nav_index: 8
-      x: 1.20
+      x: 1.27
       y: -0.89
       yaw: 0.00
       area: "AREA_B"
@@ -202,7 +202,7 @@ mission:
     # B 区作业点，每个点执行两个 arrival_jobs，每个 job 最多处理 3 朵雌花
     - id: "area_b_09_right"
       nav_index: 9
-      x: 0.70
+      x: 0.74
       y: -0.89
       yaw: 0.00
       area: "AREA_B"

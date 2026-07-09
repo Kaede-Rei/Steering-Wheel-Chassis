@@ -104,10 +104,13 @@ class CameraTargetService(Node):
         self.dist_coeff = np.array([[0.123914, -0.169189, 0.003153, 0.001719, 0.0]], dtype=float)
 
         # 颜色阈值，后续可以继续改成配置文件读入
-        self.lower_yellow_a = np.array([11, 30, 0], dtype=np.uint8)
-        self.upper_yellow_a = np.array([67, 255, 255], dtype=np.uint8)
-        self.lower_yellow_b = np.array([22, 27, 36], dtype=np.uint8)
-        self.upper_yellow_b = np.array([130, 255, 255], dtype=np.uint8)
+        self.lower_yellow_a = np.array([27, 50, 0], dtype=np.uint8)
+        self.upper_yellow_a = np.array([99, 255, 255], dtype=np.uint8)
+        self.lower_yellow_b = np.array([0, 29, 217], dtype=np.uint8)
+        self.upper_yellow_b = np.array([180, 255, 255], dtype=np.uint8)
+        # A/B 两区独立的形态学核大小
+        self.open_k_a, self.close_k_a = 5, 5
+        self.open_k_b, self.close_k_b = 1, 1
 
         self.bridge = CvBridge() if CvBridge is not None else None
         self.model = None
@@ -476,15 +479,21 @@ class CameraTargetService(Node):
         undistorted = cv2.remap(roi, map1, map2, cv2.INTER_LINEAR)
         hsv = cv2.cvtColor(undistorted, cv2.COLOR_BGR2HSV)
 
+        # 动态分配 HSV 阈值和形态学核心
         if item['class'] == 'A_female':
             lower, upper = self.lower_yellow_a, self.upper_yellow_a
+            open_k, close_k = self.open_k_a, self.close_k_a
         else:
             lower, upper = self.lower_yellow_b, self.upper_yellow_b
+            open_k, close_k = self.open_k_b, self.close_k_b
 
         mask = cv2.inRange(hsv, lower, upper)
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        
+        # 使用动态获取的内核大小进行形态学处理
+        kernel_open = np.ones((open_k, open_k), np.uint8)
+        kernel_close = np.ones((close_k, close_k), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None

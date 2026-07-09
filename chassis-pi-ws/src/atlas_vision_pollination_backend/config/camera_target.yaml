@@ -101,7 +101,7 @@ atlas_camera_target_service:
     voice_pitch: "70"
 
     # espeak 音量
-    voice_volume: "200"
+    voice_volume: "50"
 
     # 语音命令超时时间，单位 s
     voice_timeout_s: 4.0

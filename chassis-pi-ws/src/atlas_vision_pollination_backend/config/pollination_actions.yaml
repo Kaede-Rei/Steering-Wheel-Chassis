@@ -162,11 +162,11 @@ arrival_tasks:
 
     # 预授粉工具点偏移，单位 m
     # z=0.097 用于先靠近目标但不接触
-    pre_pollination_tool_point_m: [0.05, -0.015, 0.097]
+    pre_pollination_tool_point_m: [0.02, -0.015, 0.117]
 
     # 授粉工具点偏移，单位 m
     # 如果接触过深就增大 z，如果接触不到就减小 z
-    pollination_tool_point_m: [0.05, -0.015, 0.087]
+    pollination_tool_point_m: [0.02, -0.015, 0.107]
 
     # 默认动作速度，单位 rad/s
     speed_rad_s: 3.14
